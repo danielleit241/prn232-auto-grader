@@ -1,0 +1,59 @@
+﻿@page "/Instructor"
+@model Q2.Pages.Instructors.ListModel
+@{
+}
+
+
+<!-- saved from url=(0022)http://localhost:5190/ -->
+<html>
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+</head>
+<body>
+    <div class="container search-wrapper">
+        <h2>Instructor Search</h2>
+
+        <form method="get" action="">
+            <div class="form-group">
+                <label>Instructor Name:</label>
+                <input type="text" name="name" id="ip_instructorName" placeholder="40" value="@Model.Name">
+            </div>
+
+            <div class="form-group">
+                <label>Expertise:</label>
+                <input type="text" name="expertise" id="ip_expertise" placeholder="electric" value="@Model.Expertise">
+            </div>
+
+            <button type="submit" id="bt_search" class="btn-search">Search</button>
+        </form>
+
+        <table class="instructor-table">
+            <thead>
+                <tr>
+                    <th>Instructor Name</th>
+                    <th>Expertise</th>
+                    <th>Hire Date</th>
+                    <th>Total Courses</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var i in Model.Instructors)
+                {
+                    <tr>
+                        <td id="td_fullName_@i.InstructorId">@i.FullName</td>
+                        <td id="td_expertise_@i.InstructorId">@i.Expertise</td>
+                        <td id="td_hireDate_@i.InstructorId">@i.HireDate</td>
+                        <td id="td_totalCourses_@i.InstructorId">@i.TotalCourses</td>
+                 
+                        <td>
+                            <a href="/Instructor/@i.InstructorId" id="a_@i.InstructorId">View Courses</a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</body>
+</html>
