@@ -32,6 +32,7 @@ public class GradingDbContext(DbContextOptions<GradingDbContext> options) : DbCo
         // TestCase
         b.Entity<TestCase>(e =>
         {
+            e.Property(x => x.Name).HasMaxLength(100).IsRequired();
             e.Property(x => x.HttpMethod).HasMaxLength(10).IsRequired();
             e.Property(x => x.UrlTemplate).HasMaxLength(500).IsRequired();
         });
