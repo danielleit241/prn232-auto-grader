@@ -1,32 +1,60 @@
+using System.Reflection;
+using Asp.Versioning;
+using GradingSystem.Infrastructure.Extensions;
+using GradingSystem.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.OpenApi.Models;
+
 var builder = WebApplication.CreateBuilder(args);
 
-// ── Database ─────────────────────────────────────────────
-// builder.Services.AddDbContext<GradingDbContext>(opt =>
-//     opt.UseNpgsql(builder.Configuration.GetConnectionString("Postgres")));
+builder.Services.AddInfrastructure(builder.Configuration);
 
-// ── Repositories ─────────────────────────────────────────
-// builder.Services.AddScoped<IAssignmentRepository, AssignmentRepository>();
-// builder.Services.AddScoped<ISubmissionRepository, SubmissionRepository>();
-// builder.Services.AddScoped<IGradingJobRepository, GradingJobRepository>();
-// builder.Services.AddScoped<IQuestionResultRepository, QuestionResultRepository>();
-
-// ── Services ──────────────────────────────────────────────
-// builder.Services.AddScoped<IAssignmentService, AssignmentService>();
-// builder.Services.AddScoped<ISubmissionService, SubmissionService>();
-// builder.Services.AddScoped<IGradingJobService, GradingJobService>();
-// builder.Services.AddScoped<IExportService, ExportService>();
-
-// ── HTTP / Swagger / CORS ─────────────────────────────────
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+
+builder.Services.AddApiVersioning(opt =>
+{
+    opt.DefaultApiVersion = new ApiVersion(1, 0);
+    opt.AssumeDefaultVersionWhenUnspecified = true;
+    opt.ReportApiVersions = true;
+    opt.ApiVersionReader = new UrlSegmentApiVersionReader();
+})
+.AddApiExplorer(opt =>
+{
+    opt.GroupNameFormat = "'v'VVV";
+    opt.SubstituteApiVersionInUrl = true;
+});
+
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new OpenApiInfo { Title = "Grading System API", Version = "v1" });
+    c.SwaggerDoc("v2", new OpenApiInfo { Title = "Grading System API", Version = "v2" });
+
+    var xmlPath = Path.Combine(AppContext.BaseDirectory, $"{Assembly.GetExecutingAssembly().GetName().Name}.xml");
+    if (File.Exists(xmlPath)) c.IncludeXmlComments(xmlPath);
+});
+
 builder.Services.AddCors(opt => opt.AddDefaultPolicy(p =>
     p.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod()));
 
 var app = builder.Build();
 
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<GradingDbContext>();
+    await db.Database.MigrateAsync();
+}
+
 app.UseSwagger();
-app.UseSwaggerUI();
+app.UseSwaggerUI(c =>
+{
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "v1");
+    c.SwaggerEndpoint("/swagger/v2/swagger.json", "v2");
+    c.RoutePrefix = string.Empty;
+    c.DisplayRequestDuration();
+    c.EnableTryItOutByDefault();
+});
+
 app.UseCors();
 app.UseAuthorization();
 app.MapControllers();

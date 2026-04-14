@@ -365,6 +365,10 @@ FodyWeavers.xsd
 # dotenv environment variable files
 .env
 
+# Local task files
+tasks/
+task.md
+
 !vicobi.user/
 
 .vscode
