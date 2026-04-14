@@ -1,42 +1,588 @@
+/* ============================================
+   PRN232 Auto Grader - Zapier-Inspired Design System
+   Based on DESIGN.md specification
+   ============================================ */
+
 @import "tailwindcss";
 
-@theme {
-  /* Colors */
-  --color-primary: #2563eb;
-  --color-primary-dark: #1d4ed8;
-  --color-secondary: #64748b;
-
-  /* Fonts */
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+/* ============================================
+   CSS CUSTOM PROPERTIES (Design Tokens)
+   ============================================ */
+:root {
+  /* === Color Palette === */
+  
+  /* Primary Colors */
+  --color-zapier-black: #201515;   /* Primary text, headings */
+  --color-cream: #fffefb;            /* Page background - warm cream */
+  --color-off-white: #fffdf9;        /* Secondary background surface */
+  
+  /* Brand Accent */
+  --color-orange: #ff4f00;           /* Primary CTA, active states */
+  
+  /* Neutral Scale */
+  --color-charcoal: #36342e;         /* Secondary text */
+  --color-warm-gray: #939084;        /* Muted text, labels */
+  --color-sand: #c5c0b1;             /* Primary borders */
+  --color-light-sand: #eceae3;       /* Secondary buttons, surfaces */
+  --color-mid-warm: #b5b2aa;         /* Alternate border tone */
+  
+  /* === Semantic Token Mapping (Legacy/Convenience) === */
+  --color-text: var(--color-zapier-black);
+  --color-text-secondary: var(--color-charcoal);
+  --color-text-muted: var(--color-warm-gray);
+  --color-background: var(--color-cream);
+  --color-surface: var(--color-off-white);
+  --color-primary: var(--color-orange);
+  --color-border: var(--color-sand);
+  --color-border-light: var(--color-light-sand);
+  --color-accent: var(--color-orange);
+  
+  /* === Typography === */
+  --font-display: "Degular Display", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-primary: "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-editorial: "GT Alpina", Georgia, "Times New Roman", serif;
+  --font-system: Arial, sans-serif;
+  
+  /* === Spacing System (8px base) === */
+  --space-1: 1px;
+  --space-2: 2px;
+  --space-3: 3px;
+  --space-4: 4px;
+  --space-5: 5px;
+  --space-6: 6px;
+  --space-8: 8px;
+  --space-10: 10px;
+  --space-12: 12px;
+  --space-16: 16px;
+  --space-20: 20px;
+  --space-24: 24px;
+  --space-32: 32px;
+  --space-40: 40px;
+  --space-48: 48px;
+  --space-56: 56px;
+  --space-64: 64px;
+  --space-72: 72px;
+  --space-80: 80px;
+  
+  /* === Border Radius === */
+  --radius-tight: 3px;      /* Small inline spans */
+  --radius-standard: 4px;    /* Orange CTA buttons, tags */
+  --radius-content: 5px;      /* Cards, links, containers */
+  --radius-comfortable: 8px; /* Featured cards, large buttons, tabs */
+  --radius-social: 14px;     /* Social icon buttons */
+  --radius-pill: 20px;       /* Play buttons, pill buttons */
+  
+  /* === Typography Scale === */
+  --text-display-xl: 5rem;      /* 80px - Degular Display */
+  --text-display-lg: 3.5rem;    /* 56px - Degular Display */
+  --text-display-md: 2.5rem;    /* 40px - Degular Display */
+  --text-display-btn: 1.5rem;   /* 24px - Degular Display */
+  --text-section: 3rem;          /* 48px - Inter */
+  --text-subheading-lg: 2.25rem;/* 36px - Inter */
+  --text-subheading: 2rem;      /* 32px - Inter */
+  --text-subheading-md: 1.75rem;/* 28px - Inter */
+  --text-card-title: 1.5rem;     /* 24px - Inter */
+  --text-body-lg: 1.25rem;       /* 20px - Inter */
+  --text-body-emphasis: 1.125rem;/* 18px - Inter */
+  --text-body: 1rem;             /* 16px - Inter */
+  --text-button: 1rem;           /* 16px - Inter */
+  --text-button-sm: 0.875rem;    /* 14px - Inter */
+  --text-caption: 0.875rem;     /* 14px - Inter */
+  --text-micro: 0.75rem;         /* 12px - Inter */
+  --text-micro-sm: 0.8125rem;    /* 13px - Inter */
+  
+  /* === Shadows (Inset for tab underline technique) === */
+  --shadow-tab-active: rgb(255, 79, 0) 0px -4px 0px 0px inset;
+  --shadow-tab-hover: rgb(197, 192, 177) 0px -4px 0px 0px inset;
+  
+  /* === Layout === */
+  --container-max: 1200px;
+  --header-height: 64px; /* 16 * 4 = 64px for h-16 */
 }
 
-@layer base {
-  * {
-    @apply border-gray-200 dark:border-gray-800;
-  }
-
-  body {
-    @apply bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100;
-  }
+/* ============================================
+   BASE STYLES & RESET
+   ============================================ */
+*, *::before, *::after {
+  box-sizing: border-box;
 }
 
-@layer components {
+html {
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-primary);
+  font-size: var(--text-body);
+  line-height: 1.25;
+  color: var(--color-text);
+  background-color: var(--color-background);
+  letter-spacing: -0.16px;
+}
+
+/* ============================================
+   TYPOGRAPHY CLASSES
+   ============================================ */
+
+/* Display Typography - Degular Display */
+.font-display {
+  font-family: var(--font-display);
+}
+
+.text-display-xl {
+  font-family: var(--font-display);
+  font-size: var(--text-display-xl);
+  font-weight: 500;
+  line-height: 0.90;
+  letter-spacing: normal;
+}
+
+.text-display-lg {
+  font-family: var(--font-display);
+  font-size: var(--text-display-lg);
+  font-weight: 500;
+  line-height: 0.90;
+  letter-spacing: 1.12px;
+}
+
+.text-display-md {
+  font-family: var(--font-display);
+  font-size: var(--text-display-md);
+  font-weight: 500;
+  line-height: 0.90;
+}
+
+.text-display-btn {
+  font-family: var(--font-display);
+  font-size: var(--text-display-btn);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 1px;
+}
+
+/* Section Headings - Inter */
+.text-section {
+  font-family: var(--font-primary);
+  font-size: var(--text-section);
+  font-weight: 500;
+  line-height: 1.04;
+}
+
+/* Editorial - GT Alpina */
+.font-editorial {
+  font-family: var(--font-editorial);
+}
+
+.text-editorial-heading {
+  font-family: var(--font-editorial);
+  font-size: var(--text-section);
+  font-weight: 250;
+  letter-spacing: -1.92px;
+}
+
+.text-editorial-sub {
+  font-family: var(--font-editorial);
+  font-size: var(--text-display-md);
+  font-weight: 300;
+  line-height: 1.08;
+  letter-spacing: -1.6px;
+}
+
+/* Sub-headings - Inter */
+.text-subheading-lg {
+  font-size: var(--text-subheading-lg);
+  font-weight: 500;
+  letter-spacing: -1px;
+}
+
+.text-subheading {
+  font-size: var(--text-subheading);
+  font-weight: 400;
+  line-height: 1.25;
+}
+
+.text-subheading-md {
+  font-size: var(--text-subheading-md);
+  font-weight: 500;
+}
+
+/* Body Text */
+.text-card-title {
+  font-size: var(--text-card-title);
+  font-weight: 600;
+  letter-spacing: -0.48px;
+}
+
+.text-body-lg {
+  font-size: var(--text-body-lg);
+  font-weight: 400;
+  line-height: 1.20;
+  letter-spacing: -0.2px;
+}
+
+.text-body-emphasis {
+  font-size: var(--text-body-emphasis);
+  font-weight: 600;
+  line-height: 1;
+}
+
+.text-body-semibold {
+  font-size: var(--text-body);
+  font-weight: 600;
+  line-height: 1.16;
+}
+
+/* Labels & Captions */
+.text-caption {
+  font-size: var(--text-caption);
+  font-weight: 500;
+  line-height: 1.43;
+}
+
+.text-caption-upper {
+  font-size: var(--text-caption);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.text-micro {
+  font-size: var(--text-micro);
+  font-weight: 600;
+  line-height: 1.33;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.text-micro-sm {
+  font-size: var(--text-micro-sm);
+  font-weight: 500;
+  line-height: 1.54;
+}
+
+/* ============================================
+   LAYOUT UTILITIES
+   ============================================ */
+.container-custom {
+  width: 100%;
+  max-width: var(--container-max);
+  margin: 0 auto;
+  padding: 0 var(--space-24);
+}
+
+@media (max-width: 768px) {
   .container-custom {
-    @apply mx-auto max-w-7xl px-4 sm:px-6 lg:px-8;
-  }
-
-  .btn-primary {
-    @apply bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors;
-  }
-
-  .btn-secondary {
-    @apply bg-gray-200 text-gray-900 px-4 py-2 rounded-lg hover:bg-gray-300 transition-colors dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700;
+    padding: 0 var(--space-16);
   }
 }
 
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
+@media (max-width: 480px) {
+  .container-custom {
+    padding: 0 var(--space-12);
+  }
+}
+
+/* ============================================
+   BUTTON COMPONENT STYLES
+   ============================================ */
+
+/* Primary Orange Button */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  background-color: var(--color-orange);
+  color: var(--color-cream);
+  border: 1px solid var(--color-orange);
+  border-radius: var(--radius-standard);
+  padding: var(--space-2) var(--space-4);
+  font-family: var(--font-primary);
+  font-size: var(--text-button);
+  font-weight: 600;
+  line-height: normal;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-primary:hover {
+  background-color: #e64600;
+  border-color: #e64600;
+}
+
+.btn-primary:focus-visible {
+  outline: 2px solid var(--color-orange);
+  outline-offset: 2px;
+}
+
+/* Large Primary Dark Button */
+.btn-dark-lg {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  background-color: var(--color-zapier-black);
+  color: var(--color-cream);
+  border: 1px solid var(--color-zapier-black);
+  border-radius: var(--radius-comfortable);
+  padding: var(--space-20) var(--space-24);
+  font-family: var(--font-primary);
+  font-size: var(--text-button);
+  font-weight: 600;
+  line-height: normal;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-dark-lg:hover {
+  background-color: var(--color-sand);
+  border-color: var(--color-sand);
+  color: var(--color-zapier-black);
+}
+
+/* Light / Ghost Button */
+.btn-light {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  background-color: var(--color-light-sand);
+  color: var(--color-charcoal);
+  border: 1px solid var(--color-sand);
+  border-radius: var(--radius-comfortable);
+  padding: var(--space-20) var(--space-24);
+  font-family: var(--font-primary);
+  font-size: var(--text-button);
+  font-weight: 600;
+  line-height: normal;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-light:hover {
+  background-color: var(--color-sand);
+  color: var(--color-zapier-black);
+}
+
+/* Pill Button */
+.btn-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  background-color: var(--color-cream);
+  color: var(--color-charcoal);
+  border: 1px solid var(--color-sand);
+  border-radius: var(--radius-pill);
+  padding: 0 var(--space-16);
+  font-family: var(--font-primary);
+  font-size: var(--text-button);
+  font-weight: 600;
+  line-height: normal;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-pill:hover {
+  background-color: var(--color-light-sand);
+}
+
+/* Small Button Variant */
+.btn-sm {
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-button-sm);
+}
+
+/* Large Button Padding Variant */
+.btn-lg {
+  padding: var(--space-20) var(--space-24);
+}
+
+/* Overlay Semi-transparent Button */
+.btn-overlay {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  background-color: rgba(45, 45, 46, 0.5);
+  color: var(--color-cream);
+  border: none;
+  border-radius: var(--radius-pill);
+  padding: var(--space-4) var(--space-8);
+  font-family: var(--font-primary);
+  font-size: var(--text-button);
+  font-weight: 600;
+  line-height: normal;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-overlay:hover {
+  background-color: #2d2d2e;
+}
+
+/* ============================================
+   TAB / NAVIGATION STYLES
+   ============================================ */
+.tab {
+  display: inline-flex;
+  align-items: center;
+  padding: 12px var(--space-16);
+  font-family: var(--font-primary);
+  font-size: var(--text-button);
+  font-weight: 500;
+  color: var(--color-text);
+  text-decoration: none;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tab:hover {
+  box-shadow: var(--shadow-tab-hover);
+}
+
+.tab.active {
+  box-shadow: var(--shadow-tab-active);
+}
+
+/* ============================================
+   CARD COMPONENT STYLES
+   ============================================ */
+.card {
+  background-color: var(--color-cream);
+  border: 1px solid var(--color-sand);
+  border-radius: var(--radius-content);
+  padding: var(--space-16);
+  transition: border-color 0.2s ease;
+}
+
+.card:hover {
+  border-color: var(--color-mid-warm);
+}
+
+.card-featured {
+  background-color: var(--color-cream);
+  border: 1px solid var(--color-sand);
+  border-radius: var(--radius-comfortable);
+  padding: var(--space-24);
+}
+
+/* ============================================
+   INPUT COMPONENT STYLES
+   ============================================ */
+.input {
+  width: 100%;
+  background-color: var(--color-cream);
+  color: var(--color-text);
+  border: 1px solid var(--color-sand);
+  border-radius: var(--radius-content);
+  padding: var(--space-3) var(--space-4);
+  font-family: var(--font-system);
+  font-size: var(--text-button);
+  line-height: 1.5;
+  transition: border-color 0.2s ease;
+}
+
+.input::placeholder {
+  color: var(--color-warm-gray);
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--color-orange);
+}
+
+.input:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.input-error {
+  border-color: #dc2626;
+}
+
+.input-error:focus {
+  border-color: #dc2626;
+}
+
+/* ============================================
+   LINK STYLES
+   ============================================ */
+.link {
+  color: var(--color-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  transition: all 0.2s ease;
+}
+
+.link:hover {
+  text-decoration: none;
+}
+
+/* ============================================
+   SECTION DIVIDER
+   ============================================ */
+.divider {
+  width: 100%;
+  border: none;
+  border-top: 1px solid var(--color-sand);
+  margin: 0;
+}
+
+/* ============================================
+   UTILITY CLASSES
+   ============================================ */
+
+/* Colors */
+.bg-cream { background-color: var(--color-cream); }
+.bg-surface { background-color: var(--color-surface); }
+.bg-dark { background-color: var(--color-zapier-black); }
+.bg-light-sand { background-color: var(--color-light-sand); }
+
+.text-orange { color: var(--color-orange); }
+.text-dark { color: var(--color-zapier-black); }
+.text-charcoal { color: var(--color-charcoal); }
+.text-warm-gray { color: var(--color-warm-gray); }
+
+.border-sand { border-color: var(--color-sand); }
+.border-light-sand { border-color: var(--color-light-sand); }
+
+/* ============================================
+   ANIMATIONS & TRANSITIONS
+   ============================================ */
+.transition-all {
+  transition: all 0.2s ease;
+}
+
+.transition-colors {
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+/* ============================================
+   FOCUS STATES (Accessibility)
+   ============================================ */
+*:focus-visible {
+  outline: 2px solid var(--color-orange);
+  outline-offset: 2px;
+}
+
+/* ============================================
+   PRINT STYLES
+   ============================================ */
+@media print {
+  body {
+    background-color: white;
+    color: black;
   }
 }

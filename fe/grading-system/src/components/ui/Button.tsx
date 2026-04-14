@@ -2,50 +2,76 @@
 
 import * as React from "react";
 import { cn } from "@/lib/utils";
+import Link from "next/link";
+
+export type ButtonVariant = "primary" | "dark" | "light" | "pill" | "overlay" | "outline";
+export type ButtonSize = "sm" | "md" | "lg";
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: "primary" | "secondary" | "outline" | "ghost" | "destructive";
-  size?: "sm" | "md" | "lg" | "icon";
-  isLoading?: boolean;
+  variant?: ButtonVariant;
+  size?: ButtonSize;
+  href?: string;
+  fullWidth?: boolean;
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant = "primary", size = "md", isLoading, children, disabled, ...props }, ref) => {
-    const baseStyles = "inline-flex items-center justify-center rounded-lg font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50";
+  (
+    {
+      className,
+      variant = "primary",
+      size = "md",
+      href,
+      fullWidth,
+      children,
+      ...props
+    },
+    ref
+  ) => {
+    // Base styles shared across all button variants
+    const base =
+      "inline-flex items-center justify-center gap-2 font-[600] cursor-pointer transition-all duration-200 ease border";
 
-    const variantStyles = {
-      primary: "bg-blue-600 text-white hover:bg-blue-700 focus-visible:ring-blue-500",
-      secondary: "bg-gray-200 text-gray-900 hover:bg-gray-300 focus-visible:ring-gray-500 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700",
-      outline: "border border-gray-300 bg-transparent hover:bg-gray-100 focus-visible:ring-gray-500 dark:border-gray-600 dark:hover:bg-gray-800",
-      ghost: "bg-transparent hover:bg-gray-100 focus-visible:ring-gray-500 dark:hover:bg-gray-800",
-      destructive: "bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-500",
+    // Variant-specific styles (inline approach for consistency with inline navbar styles)
+    const variantMap: Record<ButtonVariant, string> = {
+      primary:
+        "bg-[#ff4f00] text-[#fffefb] border-[#ff4f00] hover:bg-[#e64600] hover:border-[#e64600]",
+      dark: "bg-[#201515] text-[#fffefb] border-[#201515] hover:bg-[#c5c0b1] hover:text-[#201515] hover:border-[#c5c0b1]",
+      light: "bg-[#eceae3] text-[#36342e] border-[#c5c0b1] hover:bg-[#c5c0b1] hover:text-[#201515]",
+      pill: "bg-[#fffefb] text-[#36342e] border-[#c5c0b1] hover:bg-[#eceae3] rounded-[20px]",
+      overlay: "bg-[rgba(45,45,46,0.5)] text-[#fffefb] border-transparent hover:bg-[#2d2d2e] rounded-[20px] backdrop-blur-sm",
+      outline: "bg-transparent text-[#201515] border-[#c5c0b1] hover:bg-[#eceae3] hover:border-[#c5c0b1]",
     };
 
-    const sizeStyles = {
-      sm: "h-8 px-3 text-sm",
-      md: "h-10 px-4 text-sm",
-      lg: "h-12 px-6 text-base",
-      icon: "h-10 w-10",
+    const sizeMap: Record<ButtonSize, string> = {
+      sm: "px-3 py-[6px] text-[0.875rem] rounded-[4px]",
+      md: "px-4 py-[8px] text-[1rem] rounded-[4px]",
+      lg: "px-6 py-5 text-[1rem] rounded-[8px]",
     };
+
+    const classes = cn(
+      base,
+      variantMap[variant],
+      sizeMap[size],
+      fullWidth && "w-full",
+      className
+    );
+
+    if (href) {
+      return (
+        <Link href={href} className={classes}>
+          {children}
+        </Link>
+      );
+    }
 
     return (
-      <button
-        className={cn(baseStyles, variantStyles[variant], sizeStyles[size], className)}
-        ref={ref}
-        disabled={disabled || isLoading}
-        {...props}
-      >
-        {isLoading ? (
-          <svg className="mr-2 h-4 w-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-          </svg>
-        ) : null}
+      <button ref={ref} className={classes} {...props}>
         {children}
       </button>
     );
   }
 );
+
 Button.displayName = "Button";
 
 export { Button };

@@ -1,5 +1,5 @@
 // UI Components
-export * from "./Button";
-export * from "./Card";
-export * from "./Input";
-export * from "./Badge";
+export { Button } from "./Button";
+export { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "./Card";
+export { Input } from "./Input";
+export { Badge } from "./Badge";
