@@ -1,26 +1,40 @@
 services:
-  worker:
-    build:
-      context: ./be
-      dockerfile: GradingSystem.Worker/Dockerfile
-    depends_on:
-      postgres:
-        condition: service_healthy
-      sqlserver:
-        condition: service_healthy
-    environment:
-      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
-      ConnectionStrings__SqlServer: "Server=sqlserver,1433;User Id=sa;Password=${SA_PASSWORD};TrustServerCertificate=true"
-      Storage__BasePath: /storage
-      Worker__PollIntervalSeconds: 5
-      Worker__ArtifactHealthCheckTimeoutSeconds: 15
-      Worker__ArtifactPortRangeStart: 7000
-      Worker__ArtifactPortRangeEnd: 7999
-    volumes:
-      - storage_data:/storage
-    networks:
-      - grading_net
-    restart: unless-stopped
+
+  # api:
+  #   image: ${DOCKER_REPO}/grading-system-api:${IMAGE_TAG:-latest}
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #   environment:
+  #     ASPNETCORE_ENVIRONMENT: Production
+  #     ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+  #   ports:
+  #     - "8080:8080"
+  #   networks:
+  #     - grading_net
+  #   restart: unless-stopped
+
+  # worker:
+  #   image: ${DOCKER_REPO}/grading-system-worker:${IMAGE_TAG:-latest}
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     sqlserver:
+  #       condition: service_healthy
+  #   environment:
+  #     ASPNETCORE_ENVIRONMENT: Production
+  #     ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+  #     ConnectionStrings__SqlServer: "Server=sqlserver,1433;User Id=sa;Password=${SA_PASSWORD};TrustServerCertificate=true"
+  #     Storage__BasePath: /storage
+  #     Worker__PollIntervalSeconds: 5
+  #     Worker__ArtifactHealthCheckTimeoutSeconds: 15
+  #     Worker__ArtifactPortRangeStart: 7000
+  #     Worker__ArtifactPortRangeEnd: 7999
+  #   volumes:
+  #     - storage_data:/storage
+  #   networks:
+  #     - grading_net
+  #   restart: unless-stopped
 
   postgres:
     image: postgres:16-alpine
@@ -48,7 +62,7 @@ services:
       SA_PASSWORD: ${SA_PASSWORD}
       MSSQL_PID: Express
     ports:
-      - "1433:1433"           # expose để dev connect trực tiếp
+      - "1433:1433"
     volumes:
       - sqlserver_data:/var/opt/mssql
     networks:
