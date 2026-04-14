@@ -1,148 +1,114 @@
-# Project Plan — Hệ thống chấm bài tự động
+# Grading System — Plan
 
-## Entities
-
-| Entity          | Mô tả                                               |
-| --------------- | --------------------------------------------------- |
-| Assignment      | Đề thi, gắn với 1 SQL script                        |
-| Question        | Câu hỏi trong đề                                    |
-| TestCase        | Test case của câu, chứa input + expect              |
-| Submission      | Bài nộp ZIP của sinh viên                           |
-| SqlScriptUpload | File SQL của đề (1 đề = 1 file)                     |
-| GradingJob      | Job chấm bài chạy nền                               |
-| QuestionResult  | Kết quả từng câu của 1 submission                   |
-| ReviewNote      | Ghi chú của giáo viên theo format `Q1: ... Q2: ...` |
-| ExportJob       | Job export Excel                                    |
-
----
-
-## API Contract
-
-**Response envelope chung:**
-
-```json
-{ "status": "", "message": "", "data": {}, "errors": [], "traceId": "" }
-```
-
-**Endpoints:**
-
-- CRUD Assignment / Question / TestCase
-- `POST /submissions/upload` — upload ZIP bài nộp
-- `POST /assignments/{id}/sql` — upload SQL script (1 lần / đề)
-- `POST /submissions/{id}/grade` — trigger grading job
-- `GET  /grading-jobs/{id}` — xem trạng thái job
-- `GET  /submissions/{id}/results` — kết quả từng câu
-- `PUT  /submissions/{id}/notes` — lưu review notes
-- `GET  /submissions/{id}/notes` — lấy review notes
-- `POST /exports` — trigger export Excel
-- `GET  /exports/{id}/download` — tải file
-
----
-
-## Ngày 2 — Nền service và database
-
-- [ ] .NET Web API: Swagger, validation, CORS
-- [ ] .NET Worker Service: xử lý queue nền
-- [ ] PostgreSQL schema cho tất cả bảng
-- [ ] Queue DB-backed: bảng `jobs` + polling worker
-- [ ] Local file storage (zip / sql / export); abstraction để nâng cấp cloud sau
-
----
-
-## Ngày 3 — Ingestion
-
-- [ ] Upload ZIP: validate, unzip an toàn, detect mode `source` / `artifact`
-- [ ] Upload SQL: lưu file, gắn vào Assignment
-- [ ] API xem metadata file đã upload
-
-### SQL Isolation per Submission
-
-Mỗi Assignment có 1 SQL script. Trước khi chấm mỗi submission, reset schema sạch:
+## Kiến trúc
 
 ```
-1. DROP SCHEMA grading_<assignment_id> CASCADE
-2. CREATE SCHEMA grading_<assignment_id>
-3. Re-run SQL script của assignment
-4. Chạy test cases → state độc lập với submission khác
+Docker Compose
+  ├── api       (.NET Web API)      → PostgreSQL
+  ├── worker    (.NET Worker)       → PostgreSQL + SQL Server
+  ├── postgres  (system DB)
+  └── sqlserver (student DB, Q1 only)
 ```
 
-- Submission app nhận connection string động trỏ vào schema này (không hardcode)
-- Các submission trong cùng assignment chấm **tuần tự** để tránh race condition
-- Muốn song song sau: dùng schema `grading_<assignment_id>_<submission_id>`, drop sau khi xong
-- SQL execution: cho phép DDL + DML, có timeout và audit log
+**Storage volume** (dùng chung api + worker): `/storage/`
+- `assignments/{id}/database.sql`
+- `assignments/{id}/given-api.zip`
+- `submissions/{id}/artifact.zip`
+- `exports/{file}.xlsx`
 
 ---
 
-## Ngày 4-5 — Engine chấm
+## Database (PostgreSQL)
 
-- [ ] Source flow: `restore` → `build` → `run` → test runner
-- [ ] Artifact flow: `publish` → test runner
-- [ ] Test runner: ghi pass/fail, output, thời gian, lỗi cho từng test case
-- [ ] Scoring engine: tính điểm từng câu và tổng theo barem
-- [ ] Lưu QuestionResult để FE query realtime
-
-### Thiết kế TestCase (generic)
-
-Test runner chỉ làm 3 việc: **gọi HTTP → check status → validate response**.  
-Không biết gì về domain. Đề mới chỉ cần insert vào bảng `test_cases`.
-
-**Bảng `test_cases`:**
-
-```
-id, question_id,
-http_method,     -- GET / POST / PUT / DELETE
-url_template,    -- /api/students/{id}/grade
-input_json,      -- { pathParams, queryParams, body }
-expect_json,     -- format đơn giản (90% trường hợp)
-schema_json,     -- JSON Schema override khi expect không đủ
-score,
-timeout_ms
-```
-
-**Format `expect_json`:**
-
-```json
-{ "status": 200, "isArray": true, "fields": ["id", "name", "gpa"] }
-```
-
-Các pattern phổ biến:
-
-| Case                  | expect_json                                                                                                          |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| GET list              | `{ "status": 200, "isArray": true, "fields": [...] }`                                                                |
-| GET list + pagination | `{ "status": 200, "fields": ["data","totalPages",...], "nested": { "data": { "isArray": true, "fields": [...] } } }` |
-| POST / PUT hợp lệ     | `{ "status": 200, "fields": [...] }`                                                                                 |
-| POST / PUT invalid    | `{ "status": 400 }`                                                                                                  |
-| DELETE ok             | `{ "status": 204 }`                                                                                                  |
-| Not found             | `{ "status": 404 }`                                                                                                  |
-
-Chỉ dùng `schema_json` khi cần kiểm tra constraint phức tạp: range, format, const value.
+| Bảng            | Mô tả                              |
+| --------------- | ---------------------------------- |
+| assignments     | Đề thi                             |
+| questions       | Câu hỏi (Q1=api, Q2=razor)         |
+| test_cases      | Input + expect mỗi câu             |
+| submissions     | Bài nộp ZIP của sinh viên          |
+| grading_jobs    | Job chấm (pending → running → done)|
+| question_results| Kết quả từng câu                   |
+| review_notes    | Ghi chú giáo viên                  |
+| export_jobs     | Job export Excel                   |
 
 ---
 
-## Ngày 5-6 — Notes và Export
+## API Endpoints
 
-- [ ] API notes: lưu/đọc format `Q1: ... Q2: ...`, parse + validate mã câu
-- [ ] Worker export Excel: file tổng + file theo assignment
-- [ ] API danh sách file export và download URL
+```
+# Assignment setup
+POST /assignments
+POST /assignments/{id}/sql          ← upload database.sql (Q1)
+POST /assignments/{id}/given-api    ← upload givenAPI ZIP (Q2)
+POST /assignments/{id}/questions
+POST /questions/{id}/test-cases
+
+# Grading
+POST /submissions/upload            ← upload artifact ZIP
+POST /submissions/{id}/grade        ← trigger job
+GET  /grading-jobs/{id}
+GET  /submissions/{id}/results
+
+# Review & Export
+PUT  /submissions/{id}/notes
+POST /exports
+GET  /exports/{id}/download
+```
+
+Response envelope: `{ status, message, data, errors, traceId }`
 
 ---
 
-## Ngày 6-7 — FE Integration và nghiệm thu
+## Artifact Flow (Worker)
 
-- [ ] Ổn định API contract và mã lỗi
-- [ ] Seed dữ liệu mẫu cho demo
-- [ ] Tài liệu API ngắn: endpoint, payload mẫu, flow FE
-- [ ] Smoke test full flow: tạo đề → upload zip → upload sql → chấm → notes → export
+```
+1. Đọc job → load submission + assignment từ DB
+
+[Q1] Reset SQL Server:
+     DROP/CREATE DATABASE grading_{id}
+     Chạy database.sql
+
+[Q2] Start givenAPI:
+     Unzip given-api.zip → sandbox/given-api/
+     dotnet givenAPI.dll --urls http://localhost:<PORT>
+     Health-check 15s
+
+2. Start student artifact:
+   Unzip artifact.zip → sandbox/student/
+   dotnet App.dll --urls http://localhost:<PORT>
+   Env Q1: ConnectionStrings__MyCnn = "Server=sqlserver;Database=grading_{id};..."
+   Env Q2: GivenAPIBaseUrl = "http://localhost:<GIVEN_PORT>"
+   Health-check 15s
+
+3. Run test cases:
+   Mỗi TC: gửi HTTP → so sánh response với expect_json → ghi QuestionResult
+
+4. Cleanup:
+   Kill processes, xóa sandbox, [Q1] DROP DATABASE
+   UPDATE grading_jobs SET status = 'done'
+```
 
 ---
 
-## Lưu ý thực thi
+## Test Cases
 
-|                     |                                                            |
-| ------------------- | ---------------------------------------------------------- |
-| Làm song song được  | API service + thiết kế schema DB                           |
-| Làm song song được  | Lưu kết quả + API notes (sau khi có model kết quả)         |
-| Bắt buộc tuần tự    | Ingestion → Grading → Export                               |
-| Giới hạn kích thước | ZIP và SQL phải có max size ngay từ đầu                    |
-| Retention           | Định nghĩa TTL cho artifact / log / export tránh đầy ổ đĩa |
+**Q1 (Web API)** — sinh từ Swagger JSON:
+```
+GET /swagger/v1/swagger.json → parse → INSERT test_cases
+```
+Schema: `http_method, url_template, input_json, expect_json, score`
+
+`expect_json` ví dụ: `{"status":200,"isArray":true,"fields":["id","name"]}`
+
+**Q2 (Razor Pages)** — check HTML element IDs:
+```
+HTTP GET page → parse HTML → assert #elementId = expected value
+```
+
+---
+
+## Lưu ý
+
+- Submission cùng assignment chấm **tuần tự** → tránh race condition SQL Server
+- Worker dùng Docker image **sdk:8.0** (không phải aspnet) → cần `dotnet` CLI để chạy artifact
+- givenAPI chạy trên port ngẫu nhiên 7000–7999, kill ngay sau khi chấm xong

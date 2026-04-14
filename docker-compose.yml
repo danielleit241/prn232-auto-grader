@@ -1,0 +1,96 @@
+services:
+
+  # ── Grading API ───────────────────────────────────────────────
+  # api:
+  #   build:
+  #     context: ./be
+  #     dockerfile: GradingSystem.Api/Dockerfile
+  #   ports:
+  #     - "5000:8080"
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #   environment:
+  #     ASPNETCORE_ENVIRONMENT: Production
+  #     ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+  #     Storage__BasePath: /storage
+  #   volumes:
+  #     - storage_data:/storage
+  #   networks:
+  #     - grading_net
+  #   restart: unless-stopped
+
+  # ── Grading Worker ────────────────────────────────────────────
+  worker:
+    build:
+      context: ./be
+      dockerfile: GradingSystem.Worker/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      sqlserver:
+        condition: service_healthy
+    environment:
+      DOTNET_ENVIRONMENT: Production
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      ConnectionStrings__SqlServer: "Server=sqlserver,1433;User Id=sa;Password=${SA_PASSWORD};TrustServerCertificate=true"
+      Storage__BasePath: /storage
+      Worker__PollIntervalSeconds: 5
+      Worker__ArtifactHealthCheckTimeoutSeconds: 15
+      Worker__ArtifactPortRangeStart: 7000
+      Worker__ArtifactPortRangeEnd: 7999
+    volumes:
+      - storage_data:/storage
+    networks:
+      - grading_net
+    restart: unless-stopped
+
+  # ── PostgreSQL ────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - grading_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ── SQL Server ────────────────────────────────────────────────
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      SA_PASSWORD: ${SA_PASSWORD}
+      MSSQL_PID: Express
+    ports:
+      - "1433:1433"           # expose để dev connect trực tiếp
+    volumes:
+      - sqlserver_data:/var/opt/mssql
+    networks:
+      - grading_net
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P '${SA_PASSWORD}' -Q 'SELECT 1' -C -b"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+# ── Volumes ───────────────────────────────────────────────────
+volumes:
+  postgres_data:
+  sqlserver_data:
+  storage_data:         # artifact ZIP, sql script, given-api ZIP, export files
+
+# ── Networks ──────────────────────────────────────────────────
+networks:
+  grading_net:
+    driver: bridge
