@@ -3,7 +3,7 @@ using GradingSystem.Application.Exceptions;
 using GradingSystem.Application.Interfaces;
 using GradingSystem.Domain.Entities;
 
-namespace GradingSystem.Infrastructure.Services;
+namespace GradingSystem.Application.Services;
 
 public class ReviewNoteService(IUnitOfWork uow) : IReviewNoteService
 {

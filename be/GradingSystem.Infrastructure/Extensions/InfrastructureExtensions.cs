@@ -1,6 +1,6 @@
 using GradingSystem.Application.Interfaces;
+using GradingSystem.Application.Services;
 using GradingSystem.Infrastructure.Persistence;
-using GradingSystem.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;

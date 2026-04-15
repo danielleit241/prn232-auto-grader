@@ -2,7 +2,7 @@ using GradingSystem.Application.DTOs;
 using GradingSystem.Application.Interfaces;
 using GradingSystem.Domain.Entities;
 
-namespace GradingSystem.Infrastructure.Services;
+namespace GradingSystem.Application.Services;
 
 public class ExportService(IUnitOfWork uow) : IExportService
 {

@@ -5,7 +5,7 @@ using GradingSystem.Application.Interfaces;
 using GradingSystem.Domain.Entities;
 using Microsoft.Extensions.Configuration;
 
-namespace GradingSystem.Infrastructure.Services;
+namespace GradingSystem.Application.Services;
 
 public class SubmissionService(IUnitOfWork uow, IConfiguration config) : ISubmissionService
 {

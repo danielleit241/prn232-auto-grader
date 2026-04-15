@@ -4,7 +4,7 @@ using GradingSystem.Application.Interfaces;
 using GradingSystem.Domain.Entities;
 using Microsoft.Extensions.Configuration;
 
-namespace GradingSystem.Infrastructure.Services;
+namespace GradingSystem.Application.Services;
 
 public class AssignmentService(IUnitOfWork unitOfWork, IConfiguration configuration) : IAssignmentService
 {
@@ -14,8 +14,8 @@ public class AssignmentService(IUnitOfWork unitOfWork, IConfiguration configurat
     {
         var entity = new Assignment
         {
-            Title = req.Title.Trim(),
-            Description = req.Description?.Trim()
+            Title       = req.Title.Trim(),
+            Description = req.Description?.Trim(),
         };
 
         await unitOfWork.Assignments.AddAsync(entity);
@@ -36,10 +36,10 @@ public class AssignmentService(IUnitOfWork unitOfWork, IConfiguration configurat
         return entities
             .Select(e => new AssignmentSummaryDto
             {
-                Id = e.Id,
-                Title = e.Title,
+                Id          = e.Id,
+                Title       = e.Title,
                 Description = e.Description,
-                CreatedAt = e.CreatedAt
+                CreatedAt   = e.CreatedAt,
             })
             .ToList();
     }
@@ -53,10 +53,7 @@ public class AssignmentService(IUnitOfWork unitOfWork, IConfiguration configurat
         var hasUrl = !string.IsNullOrWhiteSpace(request.GivenApiBaseUrl);
 
         if (!hasSql && !hasUrl)
-        {
-            throw new BadRequestException(
-                "Provide at least one of: databaseSql file or givenApiBaseUrl.");
-        }
+            throw new BadRequestException("Provide at least one of: databaseSql file or givenApiBaseUrl.");
 
         var entity = await unitOfWork.Assignments.GetByIdAsync(id)
             ?? throw new NotFoundException($"Assignment '{id}' not found.");
@@ -73,9 +70,7 @@ public class AssignmentService(IUnitOfWork unitOfWork, IConfiguration configurat
             var url = request.GivenApiBaseUrl!.Trim();
             if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
                 (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
-            {
                 throw new BadRequestException("GivenApiBaseUrl must be a valid absolute HTTP/HTTPS URL.");
-            }
 
             entity.GivenApiBaseUrl = url;
         }
@@ -95,26 +90,22 @@ public class AssignmentService(IUnitOfWork unitOfWork, IConfiguration configurat
         await using var fileStream = File.Create(fullPath);
         await content.CopyToAsync(fileStream, ct);
 
-        return NormalizePath(fullPath);
+        return fullPath.Replace('\\', '/');
     }
 
     private static void EnsureExtension(string fileName, string expectedExtension)
     {
         if (!string.Equals(Path.GetExtension(fileName), expectedExtension, StringComparison.OrdinalIgnoreCase))
-        {
             throw new BadRequestException($"Invalid file type. Expected '{expectedExtension}'.");
-        }
     }
-
-    private static string NormalizePath(string path) => path.Replace('\\', '/');
 
     private static AssignmentDto Map(Assignment entity) => new()
     {
-        Id = entity.Id,
-        Title = entity.Title,
-        Description = entity.Description,
+        Id             = entity.Id,
+        Title          = entity.Title,
+        Description    = entity.Description,
         DatabaseSqlPath = entity.DatabaseSqlPath,
         GivenApiBaseUrl = entity.GivenApiBaseUrl,
-        CreatedAt = entity.CreatedAt
+        CreatedAt      = entity.CreatedAt,
     };
 }
