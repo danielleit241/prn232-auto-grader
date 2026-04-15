@@ -75,15 +75,27 @@ Content-Type: text/plain
 ------boundary--
 
 ###############################################################################
-# PHASE 1.4 – TEST CASES Q1 (swagger mode)
-# Worker fetch swagger/v1/swagger.json, check path+method tồn tại + schema fields
+# PHASE 1.4 – TEST CASES Q1 (mixed: swagger schema + HTTP behaviour)
+#
+# Swagger test cases (no inputJson / no expectedStatus):
+#   Worker validates swagger.json — path, method, response schema fields.
+#
+# HTTP test cases (có inputJson hoặc expectedStatus):
+#   Worker gọi thực endpoint, kiểm tra status + JSON fields.
+#
+# Nếu cần tạo lại: DELETE {{base}}/questions/{{q1Id}}/test-cases trước.
 ###############################################################################
 
-### 1.5 Tạo test cases Q1
-# GET /api/students           → array, fields: studentId studentName email gpa   (3đ)
-# GET /api/student-performance → paginated object: data totalStudents totalPages  (3đ)
-# PUT /api/enrollments/{id}/grade  → endpoint tồn tại                            (2đ)
-# DELETE /api/enrollments/{id}     → endpoint tồn tại                            (2đ)
+### 1.5 Tạo test cases Q1  (tổng 10đ)
+# ── Swagger schema (4 test cases) ──────────────────────────────────────────
+# GET /api/students               → array, fields: studentId studentName email gpa (2đ)
+# GET /api/student-performance    → object: data totalStudents totalPages current   (2đ)
+# PUT /api/enrollments/{id}/grade → endpoint tồn tại                               (1đ)
+# DELETE /api/enrollments/{id}    → endpoint tồn tại                               (1đ)
+# ── HTTP behaviour (3 test cases) ──────────────────────────────────────────
+# GET /api/student-performance?page=1&pageSize=2 → 200, có đủ pagination fields    (2đ)
+# GET /api/students?name=nguyen                  → 200, trả về array               (1đ)
+# DELETE /api/enrollments/0                      → 404 (không tồn tại)             (1đ)
 POST {{base}}/questions/{{q1Id}}/test-cases
 Content-Type: application/json
 
@@ -93,23 +105,45 @@ Content-Type: application/json
     "urlTemplate": "/api/students",
     "isArray": true,
     "fields": ["studentId", "studentName", "email", "gpa"],
-    "score": 3
+    "score": 2
   },
   {
     "httpMethod": "GET",
     "urlTemplate": "/api/student-performance",
     "fields": ["data", "totalStudents", "totalPages", "current", "pageSize"],
-    "score": 3
+    "score": 2
   },
   {
     "httpMethod": "PUT",
     "urlTemplate": "/api/enrollments/{id}/grade",
-    "score": 2
+    "score": 1
   },
   {
     "httpMethod": "DELETE",
     "urlTemplate": "/api/enrollments/{id}",
+    "score": 1
+  },
+  {
+    "httpMethod": "GET",
+    "urlTemplate": "/api/student-performance",
+    "inputJson": "{\"page\": 1, \"pageSize\": 2}",
+    "expectedStatus": 200,
+    "fields": ["data", "totalPages", "current", "pageSize"],
     "score": 2
+  },
+  {
+    "httpMethod": "GET",
+    "urlTemplate": "/api/students",
+    "inputJson": "{\"name\": \"nguyen\"}",
+    "expectedStatus": 200,
+    "isArray": true,
+    "score": 1
+  },
+  {
+    "httpMethod": "DELETE",
+    "urlTemplate": "/api/enrollments/0",
+    "expectedStatus": 404,
+    "score": 1
   }
 ]
 

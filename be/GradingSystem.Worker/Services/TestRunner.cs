@@ -35,7 +35,7 @@ public class TestRunner(ILogger<TestRunner> logger)
             List<TestCaseResult> details;
 
             if (question.Type == QuestionType.Api)
-                details = await RunSwaggerCasesAsync(testCases, app.Port, client, ct);
+                details = await RunApiCasesAsync(testCases, app.Port, client, ct);
             else
                 details = await RunHttpCasesAsync(testCases, app.Port, client, ct);
 
@@ -56,12 +56,12 @@ public class TestRunner(ILogger<TestRunner> logger)
         await uow.SaveChangesAsync(ct);
     }
 
-    private async Task<List<TestCaseResult>> RunSwaggerCasesAsync(
+    private async Task<List<TestCaseResult>> RunApiCasesAsync(
         List<TestCase> testCases, int port, HttpClient client, CancellationToken ct)
     {
         var swaggerUrl = $"http://localhost:{port}/swagger/v1/swagger.json";
         JsonDocument? swaggerDoc = null;
-        string? fetchError    = null;
+        string? fetchError = null;
 
         try
         {
@@ -81,10 +81,25 @@ public class TestRunner(ILogger<TestRunner> logger)
         logger.LogInformation("Swagger fetch {Url}: {Result}", swaggerUrl,
             swaggerDoc != null ? "OK" : fetchError);
 
-        return testCases.Select(tc =>
-            swaggerDoc != null
-                ? EvaluateSwaggerCase(tc, swaggerDoc, swaggerUrl)
-                : FailResult(tc, swaggerUrl, fetchError!)).ToList();
+        var results = new List<TestCaseResult>(testCases.Count);
+        foreach (var tc in testCases)
+        {
+            var expect = JsonSerializer.Deserialize<ExpectJson>(tc.ExpectJson,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+
+            // Test cases that carry an explicit status or input params are behavioural —
+            // run them as real HTTP calls against the student app.
+            bool isHttpCase = expect.Status != null || tc.InputJson != null;
+
+            if (isHttpCase)
+                results.Add(await RunHttpTestCaseAsync(tc, port, client, ct));
+            else if (swaggerDoc != null)
+                results.Add(EvaluateSwaggerCase(tc, swaggerDoc, swaggerUrl));
+            else
+                results.Add(FailResult(tc, swaggerUrl, fetchError!));
+        }
+
+        return results;
     }
 
     private static TestCaseResult EvaluateSwaggerCase(TestCase tc, JsonDocument swagger, string swaggerUrl)
