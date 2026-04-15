@@ -20,6 +20,9 @@ public static class InfrastructureExtensions
         services.AddScoped<IAssignmentService, AssignmentService>();
         services.AddScoped<IQuestionService, QuestionService>();
         services.AddScoped<ITestCaseService, TestCaseService>();
+        services.AddScoped<ISubmissionService, SubmissionService>();
+        services.AddScoped<IReviewNoteService, ReviewNoteService>();
+        services.AddScoped<IExportService, ExportService>();
 
         return services;
     }
