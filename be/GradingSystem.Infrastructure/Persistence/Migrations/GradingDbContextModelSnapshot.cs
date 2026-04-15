@@ -37,8 +37,9 @@ namespace GradingSystem.Infrastructure.Persistence.Migrations
                     b.Property<string>("Description")
                         .HasColumnType("text");
 
-                    b.Property<string>("GivenApiZipPath")
-                        .HasColumnType("text");
+                    b.Property<string>("GivenApiBaseUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
 
                     b.Property<string>("Title")
                         .IsRequired()
@@ -126,6 +127,11 @@ namespace GradingSystem.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<string>("ArtifactFolderName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
                     b.Property<Guid>("AssignmentId")
                         .HasColumnType("uuid");
 
@@ -159,6 +165,18 @@ namespace GradingSystem.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
+
+                    b.Property<string>("AdjustReason")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("AdjustedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("AdjustedBy")
+                        .HasColumnType("text");
+
+                    b.Property<int?>("AdjustedScore")
+                        .HasColumnType("integer");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -275,6 +293,11 @@ namespace GradingSystem.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("InputJson")
                         .HasColumnType("text");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
 
                     b.Property<Guid>("QuestionId")
                         .HasColumnType("uuid");

@@ -20,6 +20,7 @@ public class GradingDbContext(DbContextOptions<GradingDbContext> options) : DbCo
         b.Entity<Assignment>(e =>
         {
             e.Property(x => x.Title).HasMaxLength(200).IsRequired();
+            e.Property(x => x.GivenApiBaseUrl).HasMaxLength(500);
         });
 
         // Question
@@ -27,11 +28,13 @@ public class GradingDbContext(DbContextOptions<GradingDbContext> options) : DbCo
         {
             e.Property(x => x.Title).HasMaxLength(200).IsRequired();
             e.Property(x => x.Type).HasConversion<string>();
+            e.Property(x => x.ArtifactFolderName).HasMaxLength(100).IsRequired();
         });
 
         // TestCase
         b.Entity<TestCase>(e =>
         {
+            e.Property(x => x.Name).HasMaxLength(100).IsRequired();
             e.Property(x => x.HttpMethod).HasMaxLength(10).IsRequired();
             e.Property(x => x.UrlTemplate).HasMaxLength(500).IsRequired();
         });
