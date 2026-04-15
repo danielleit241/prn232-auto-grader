@@ -11,6 +11,8 @@ public class SubmissionDto
     public string ArtifactZipPath { get; set; } = string.Empty;
     public SubmissionStatus Status { get; set; }
     public DateTime CreatedAt { get; set; }
+    public int? TotalScore { get; set; }
+    public int? MaxScore { get; set; }
 }
 
 public class UploadSubmissionRequest
@@ -19,6 +21,7 @@ public class UploadSubmissionRequest
     public Guid AssignmentId { get; set; }
 
     [Required]
+    [MaxLength(20)]
     public string StudentCode { get; set; } = string.Empty;
 
     [Required]

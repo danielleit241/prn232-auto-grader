@@ -1,3 +1,4 @@
+using GradingSystem.Application.Common;
 using GradingSystem.Application.DTOs;
 using GradingSystem.Application.Interfaces;
 using Microsoft.AspNetCore.Mvc;
@@ -26,5 +27,12 @@ public class TestCasesController(ITestCaseService testCaseService) : BaseApiCont
     {
         var testCases = await testCaseService.GetByQuestionIdAsync(questionId, ct);
         return Ok(testCases);
+    }
+
+    [HttpDelete("questions/{questionId:guid}/test-cases")]
+    public async Task<IActionResult> DeleteByQuestionIdAsync(Guid questionId, CancellationToken ct)
+    {
+        var count = await testCaseService.DeleteByQuestionIdAsync(questionId, ct);
+        return Ok(ApiResponse.Success(new { deleted = count }, $"Deleted {count} test case(s)."));
     }
 }

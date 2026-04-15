@@ -13,14 +13,23 @@ public class GradingJobsController(IUnitOfWork uow) : BaseApiController
         if (entity is null)
             return NotFound($"GradingJob '{id}' not found.");
 
-        return Ok(new GradingJobDto
-        {
-            Id = entity.Id,
-            SubmissionId = entity.SubmissionId,
-            Status = entity.Status,
-            ErrorMessage = entity.ErrorMessage,
-            StartedAt = entity.StartedAt,
-            FinishedAt = entity.FinishedAt,
-        });
+        return Ok(Map(entity));
     }
+
+    [HttpGet("submissions/{submissionId:guid}/grading-jobs")]
+    public async Task<IActionResult> GetBySubmissionAsync(Guid submissionId, CancellationToken ct)
+    {
+        var jobs = await uow.GradingJobs.FindAsync(j => j.SubmissionId == submissionId);
+        return Ok(jobs.OrderByDescending(j => j.CreatedAt).Select(Map));
+    }
+
+    private static GradingJobDto Map(GradingSystem.Domain.Entities.GradingJob e) => new()
+    {
+        Id           = e.Id,
+        SubmissionId = e.SubmissionId,
+        Status       = e.Status,
+        ErrorMessage = e.ErrorMessage,
+        StartedAt    = e.StartedAt,
+        FinishedAt   = e.FinishedAt,
+    };
 }

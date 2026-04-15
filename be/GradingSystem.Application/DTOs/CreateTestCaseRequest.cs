@@ -18,6 +18,7 @@ public class CreateTestCaseRequest
     // ── Expect fields (typed) ────────────────────────────────────────────────
 
     /// <summary>Expected HTTP status code.</summary>
+    [Range(100, 599)]
     public int? ExpectedStatus { get; set; }
 
     /// <summary>Whether the JSON response should be an array.</summary>
@@ -41,6 +42,7 @@ public class CreateTestCaseRequest
     public string? SelectorText { get; set; }
 
     /// <summary>Minimum number of elements the selector must match.</summary>
+    [Range(1, 1000)]
     public int? SelectorMinCount { get; set; }
 
     [Range(1, int.MaxValue)]

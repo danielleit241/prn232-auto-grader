@@ -56,8 +56,6 @@ public class TestRunner(ILogger<TestRunner> logger)
         await uow.SaveChangesAsync(ct);
     }
 
-    // ── Swagger mode (QuestionType.Api) ──────────────────────────────────────
-
     private async Task<List<TestCaseResult>> RunSwaggerCasesAsync(
         List<TestCase> testCases, int port, HttpClient client, CancellationToken ct)
     {
@@ -181,8 +179,6 @@ public class TestRunner(ILogger<TestRunner> logger)
         return current;
     }
 
-    // ── HTTP test-case mode (QuestionType.Razor) ─────────────────────────────
-
     private static async Task<List<TestCaseResult>> RunHttpCasesAsync(
         List<TestCase> testCases, int port, HttpClient client, CancellationToken ct)
     {
@@ -281,7 +277,10 @@ public class TestRunner(ILogger<TestRunner> logger)
 
             if (expect.Selector != null)
             {
-                var nodes = doc.DocumentNode.SelectNodes(expect.Selector);
+                // HtmlAgilityPack uses XPath — a bare tag name like "table" only matches
+                // direct children of the root node. Prepend "//" so it searches anywhere.
+                var xpath = expect.Selector.StartsWith('/') ? expect.Selector : "//" + expect.Selector;
+                var nodes = doc.DocumentNode.SelectNodes(xpath);
 
                 if (expect.SelectorMinCount != null)
                 {
@@ -295,7 +294,7 @@ public class TestRunner(ILogger<TestRunner> logger)
 
                 if (expect.SelectorText != null)
                 {
-                    var node = doc.DocumentNode.SelectSingleNode(expect.Selector);
+                    var node = doc.DocumentNode.SelectSingleNode(xpath);
                     if (node?.InnerText.Contains(expect.SelectorText, StringComparison.OrdinalIgnoreCase) != true)
                         return $"SelectorText '{expect.SelectorText}' not found in element";
                 }
@@ -304,8 +303,6 @@ public class TestRunner(ILogger<TestRunner> logger)
 
         return null;
     }
-
-    // ── Helpers ───────────────────────────────────────────────────────────────
 
     private static TestCaseResult FailResult(TestCase tc, string url, string reason) => new()
     {

@@ -66,7 +66,18 @@ public class TestCaseService(IUnitOfWork unitOfWork) : ITestCaseService
         return entities.OrderBy(t => t.CreatedAt).Select(Map);
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
+    public async Task<int> DeleteByQuestionIdAsync(Guid questionId, CancellationToken ct = default)
+    {
+        _ = await unitOfWork.Questions.GetByIdAsync(questionId)
+            ?? throw new NotFoundException($"Question '{questionId}' not found.");
+
+        var existing = (await unitOfWork.TestCases.FindAsync(t => t.QuestionId == questionId)).ToList();
+        foreach (var tc in existing)
+            unitOfWork.TestCases.Remove(tc);
+
+        await unitOfWork.SaveChangesAsync(ct);
+        return existing.Count;
+    }
 
     private static string BuildName(string httpMethod, string urlTemplate)
     {
@@ -74,7 +85,6 @@ public class TestCaseService(IUnitOfWork unitOfWork) : ITestCaseService
         return generated.Length <= 100 ? generated : generated[..100];
     }
 
-    /// <summary>Serializes typed expect fields into the JSON string stored in the entity.</summary>
     private static string SerializeExpect(CreateTestCaseRequest req) =>
         JsonSerializer.Serialize(new
         {
@@ -87,7 +97,6 @@ public class TestCaseService(IUnitOfWork unitOfWork) : ITestCaseService
             selectorMinCount = req.SelectorMinCount,
         }, SerializerOpts);
 
-    /// <summary>Deserializes the stored ExpectJson string back into typed DTO fields.</summary>
     private static TestCaseDto Map(TestCase entity)
     {
         var dto = new TestCaseDto
@@ -129,7 +138,7 @@ public class TestCaseService(IUnitOfWork unitOfWork) : ITestCaseService
             if (root.TryGetProperty("selectorMinCount", out var smc) && smc.ValueKind != JsonValueKind.Null)
                 dto.SelectorMinCount = smc.GetInt32();
         }
-        catch { /* malformed stored JSON — return dto with defaults */ }
+        catch { /* ignore malformed stored JSON */ }
 
         return dto;
     }

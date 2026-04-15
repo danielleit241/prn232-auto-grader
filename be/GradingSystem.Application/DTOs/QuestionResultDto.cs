@@ -22,10 +22,14 @@ public class QuestionResultDto
 public class AdjustScoreRequest
 {
     [Required]
+    [Range(0, int.MaxValue)]
     public int AdjustedScore { get; set; }
 
     [Required]
+    [MinLength(1)]
+    [MaxLength(1000)]
     public string AdjustReason { get; set; } = string.Empty;
 
+    [MaxLength(200)]
     public string? AdjustedBy { get; set; }
 }

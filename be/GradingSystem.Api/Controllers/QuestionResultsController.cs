@@ -6,6 +6,23 @@ namespace GradingSystem.Api.Controllers;
 
 public class QuestionResultsController(IUnitOfWork uow) : BaseApiController
 {
+    [HttpGet("question-results/{id:guid}")]
+    public async Task<IActionResult> GetByIdAsync(Guid id, CancellationToken ct)
+    {
+        var entity = await uow.QuestionResults.GetByIdAsync(id);
+        if (entity is null)
+            return NotFound($"QuestionResult '{id}' not found.");
+
+        return Ok(MapDto(entity));
+    }
+
+    [HttpGet("submissions/{submissionId:guid}/question-results")]
+    public async Task<IActionResult> GetBySubmissionAsync(Guid submissionId, CancellationToken ct)
+    {
+        var results = await uow.QuestionResults.FindAsync(r => r.SubmissionId == submissionId);
+        return Ok(results.OrderBy(r => r.CreatedAt).Select(MapDto));
+    }
+
     [HttpPut("question-results/{id:guid}/adjust")]
     public async Task<IActionResult> AdjustAsync(Guid id, [FromBody] AdjustScoreRequest req, CancellationToken ct)
     {

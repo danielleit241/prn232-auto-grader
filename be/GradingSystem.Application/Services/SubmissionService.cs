@@ -49,7 +49,37 @@ public class SubmissionService(IUnitOfWork uow, IConfiguration config) : ISubmis
     public async Task<SubmissionDto?> GetByIdAsync(Guid id, CancellationToken ct = default)
     {
         var entity = await uow.Submissions.GetByIdAsync(id);
-        return entity is null ? null : Map(entity);
+        if (entity is null) return null;
+
+        var results = await uow.QuestionResults.FindAsync(r => r.SubmissionId == id);
+        return MapWithScore(entity, results.ToList());
+    }
+
+    public async Task<IReadOnlyList<SubmissionDto>> GetByAssignmentIdAsync(
+        Guid assignmentId, string? studentCode, CancellationToken ct = default)
+    {
+        _ = await uow.Assignments.GetByIdAsync(assignmentId)
+            ?? throw new NotFoundException($"Assignment '{assignmentId}' not found.");
+
+        var submissions = await uow.Submissions.FindAsync(s => s.AssignmentId == assignmentId);
+
+        if (!string.IsNullOrWhiteSpace(studentCode))
+            submissions = submissions.Where(s =>
+                s.StudentCode.Contains(studentCode, StringComparison.OrdinalIgnoreCase));
+
+        var list = submissions.OrderBy(s => s.CreatedAt).ToList();
+
+        // Batch-load all results for these submissions
+        var ids = list.Select(s => s.Id).ToHashSet();
+        var allResults = await uow.QuestionResults.FindAsync(r => ids.Contains(r.SubmissionId));
+        var resultsBySubmission = allResults.GroupBy(r => r.SubmissionId)
+                                            .ToDictionary(g => g.Key, g => g.ToList());
+
+        return list.Select(s =>
+        {
+            resultsBySubmission.TryGetValue(s.Id, out var res);
+            return MapWithScore(s, res);
+        }).ToList();
     }
 
     public async Task<IEnumerable<QuestionResultDto>> GetResultsAsync(Guid submissionId, CancellationToken ct = default)
@@ -72,6 +102,9 @@ public class SubmissionService(IUnitOfWork uow, IConfiguration config) : ISubmis
         if (submission.Status == SubmissionStatus.Grading)
             throw new ConflictException($"Submission '{submissionId}' is already being graded.");
 
+        if (submission.Status == SubmissionStatus.Done)
+            throw new ConflictException($"Submission '{submissionId}' has already been graded. Use /adjust to override individual scores.");
+
         var job = new GradingJob
         {
             SubmissionId = submissionId,
@@ -86,7 +119,9 @@ public class SubmissionService(IUnitOfWork uow, IConfiguration config) : ISubmis
         return MapJob(job);
     }
 
-    private static SubmissionDto Map(Submission e) => new()
+    private static SubmissionDto Map(Submission e) => MapWithScore(e, null);
+
+    private static SubmissionDto MapWithScore(Submission e, IList<QuestionResult>? results) => new()
     {
         Id              = e.Id,
         AssignmentId    = e.AssignmentId,
@@ -94,6 +129,8 @@ public class SubmissionService(IUnitOfWork uow, IConfiguration config) : ISubmis
         ArtifactZipPath = e.ArtifactZipPath,
         Status          = e.Status,
         CreatedAt       = e.CreatedAt,
+        TotalScore      = results is { Count: > 0 } ? results.Sum(r => r.FinalScore) : null,
+        MaxScore        = results is { Count: > 0 } ? results.Sum(r => r.MaxScore)   : null,
     };
 
     private static GradingJobDto MapJob(GradingJob e) => new()

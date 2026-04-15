@@ -9,6 +9,23 @@ public class SubmissionsController(
     ISubmissionService submissionService,
     IReviewNoteService reviewNoteService) : BaseApiController
 {
+    [HttpGet("assignments/{assignmentId:guid}/submissions")]
+    public async Task<IActionResult> GetByAssignmentAsync(
+        Guid assignmentId,
+        [FromQuery] string? studentCode,
+        CancellationToken ct)
+    {
+        var list = await submissionService.GetByAssignmentIdAsync(assignmentId, studentCode, ct);
+        return Ok(list);
+    }
+
+    [HttpGet("submissions/{id:guid}")]
+    public async Task<IActionResult> GetByIdAsync(Guid id, CancellationToken ct)
+    {
+        var submission = await submissionService.GetByIdAsync(id, ct);
+        return submission is null ? NotFound($"Submission '{id}' not found.") : Ok(submission);
+    }
+
     [HttpPost("submissions/upload")]
     [Consumes("multipart/form-data")]
     public async Task<IActionResult> UploadAsync(

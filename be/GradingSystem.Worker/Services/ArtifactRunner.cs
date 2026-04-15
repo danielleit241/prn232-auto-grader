@@ -20,7 +20,7 @@ public partial class ArtifactRunner(
     {
         var submission = job.Submission;
         var assignment = submission.Assignment;
-        var basePath   = config["Storage:BasePath"]!;
+        var basePath = config["Storage:BasePath"]!;
 
         var sandboxPath = Path.Combine(basePath, "sandbox", job.Id.ToString());
         Directory.CreateDirectory(sandboxPath);
@@ -41,7 +41,7 @@ public partial class ArtifactRunner(
 
         var ctx = new StudentContext
         {
-            SandboxPath  = sandboxPath,
+            SandboxPath = sandboxPath,
             DatabaseName = dbName,
         };
 
@@ -55,12 +55,12 @@ public partial class ArtifactRunner(
                 questionDir = studentRoot;
             }
 
-            var dll  = FindEntryDll(questionDir);
+            var dll = FindEntryDll(questionDir);
             var port = PickPort();
-            var env  = BuildEnv(question, dbName, assignment.GivenApiBaseUrl);
+            var env = BuildEnv(question, dbName, assignment.GivenApiBaseUrl);
 
             var process = StartDotnet(dll, port, env);
-            await WaitForPortAsync($"http://localhost:{port}", ct);
+            await WaitForPortAsync($"http://localhost:{port}", process, ct);
 
             ctx.QuestionApps[question.Id] = new QuestionApp { Process = process, Port = port };
 
@@ -117,6 +117,8 @@ public partial class ArtifactRunner(
         {
             var trimmed = batch.Trim();
             if (trimmed.Length == 0) continue;
+            if (IsSetupOnlyBatch(trimmed)) continue;
+
             await ExecuteNonQueryAsync(dbConn, trimmed);
         }
     }
@@ -152,7 +154,7 @@ public partial class ArtifactRunner(
         }
 
         if (question.Type == QuestionType.Razor && givenApiBaseUrl != null)
-            env["GivenApi__BaseUrl"] = givenApiBaseUrl;
+            env["GivenAPIBaseUrl"] = givenApiBaseUrl;
 
         return env;
     }
@@ -171,20 +173,31 @@ public partial class ArtifactRunner(
             .First(f => !f.Contains(".Views.") && !f.EndsWith(".runtimeconfig.dll"));
     }
 
-    private static Process StartDotnet(string dll, int port, Dictionary<string, string>? env = null)
+    private Process StartDotnet(string dll, int port, Dictionary<string, string>? env = null)
     {
         var psi = new ProcessStartInfo("dotnet", $"\"{dll}\"")
         {
-            WorkingDirectory       = Path.GetDirectoryName(dll),
+            WorkingDirectory = Path.GetDirectoryName(dll),
             RedirectStandardOutput = true,
-            RedirectStandardError  = true,
-            UseShellExecute        = false,
+            RedirectStandardError = true,
+            UseShellExecute = false,
         };
         psi.Environment["ASPNETCORE_URLS"] = $"http://localhost:{port}";
         if (env != null)
             foreach (var (k, v) in env) psi.Environment[k] = v;
 
-        return Process.Start(psi)!;
+        var process = Process.Start(psi)!;
+
+        process.OutputDataReceived += (_, _) => { };
+        process.ErrorDataReceived += (_, e) =>
+        {
+            if (!string.IsNullOrWhiteSpace(e.Data))
+                logger.LogDebug("[student-stderr] {Line}", e.Data);
+        };
+        process.BeginOutputReadLine();
+        process.BeginErrorReadLine();
+
+        return process;
     }
 
     private int PickPort()
@@ -210,19 +223,26 @@ public partial class ArtifactRunner(
         catch { return false; }
     }
 
-    private async Task WaitForPortAsync(string baseUrl, CancellationToken ct)
+    private async Task WaitForPortAsync(string baseUrl, Process process, CancellationToken ct)
     {
-        using var probe = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
+        using var probe = new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
         var deadline = DateTime.UtcNow.AddSeconds(opts.Value.ArtifactHealthCheckTimeoutSeconds);
 
         while (DateTime.UtcNow < deadline)
         {
+            ct.ThrowIfCancellationRequested();
+
+            if (process.HasExited)
+                throw new InvalidOperationException(
+                    $"Student app exited with code {process.ExitCode} before becoming ready — check stderr log above.");
+
             try
             {
                 await probe.GetAsync(baseUrl, ct);
                 return;
             }
-            catch (HttpRequestException)
+            catch (Exception ex) when (ex is HttpRequestException
+                                    || (ex is TaskCanceledException && !ct.IsCancellationRequested))
             {
                 await Task.Delay(500, ct);
             }
@@ -231,6 +251,22 @@ public partial class ArtifactRunner(
         throw new TimeoutException(
             $"App did not start within {opts.Value.ArtifactHealthCheckTimeoutSeconds}s: {baseUrl}");
     }
+
+    private static bool IsSetupOnlyBatch(string batch)
+    {
+        var stripped = LeadingBlockCommentsRegex().Replace(batch, string.Empty);
+        stripped = LeadingLineCommentsRegex().Replace(stripped, string.Empty).TrimStart();
+
+        return stripped.StartsWith("CREATE DATABASE", StringComparison.OrdinalIgnoreCase)
+            || stripped.StartsWith("USE ", StringComparison.OrdinalIgnoreCase)
+            || stripped.StartsWith("USE[", StringComparison.OrdinalIgnoreCase);
+    }
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"^(\s*/\*.*?\*/\s*)+", System.Text.RegularExpressions.RegexOptions.Singleline)]
+    private static partial System.Text.RegularExpressions.Regex LeadingBlockCommentsRegex();
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"^(\s*--[^\r\n]*[\r\n]+)*")]
+    private static partial System.Text.RegularExpressions.Regex LeadingLineCommentsRegex();
 
     [System.Text.RegularExpressions.GeneratedRegex(@"^\s*GO\s*$", System.Text.RegularExpressions.RegexOptions.Multiline | System.Text.RegularExpressions.RegexOptions.IgnoreCase)]
     private static partial System.Text.RegularExpressions.Regex GoBatchRegex();
