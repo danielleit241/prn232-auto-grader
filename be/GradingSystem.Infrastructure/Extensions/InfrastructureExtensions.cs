@@ -1,5 +1,6 @@
 using GradingSystem.Application.Interfaces;
 using GradingSystem.Infrastructure.Persistence;
+using GradingSystem.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,6 +17,9 @@ public static class InfrastructureExtensions
             opt.UseNpgsql(configuration.GetConnectionString("Postgres")));
 
         services.AddScoped<IUnitOfWork, UnitOfWork>();
+        services.AddScoped<IAssignmentService, AssignmentService>();
+        services.AddScoped<IQuestionService, QuestionService>();
+        services.AddScoped<ITestCaseService, TestCaseService>();
 
         return services;
     }

@@ -380,3 +380,7 @@ task.md
 # Keep VS Code settings private (contains sensitive DB credentials)
 .vscode/settings.json
 NUL
+
+# Local sample and given solution folders
+demau/
+PE_PRN232_GivenSolution/

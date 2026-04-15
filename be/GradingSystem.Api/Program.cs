@@ -1,5 +1,6 @@
 using System.Reflection;
 using Asp.Versioning;
+using GradingSystem.Api.Middleware;
 using GradingSystem.Infrastructure.Extensions;
 using GradingSystem.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -38,6 +39,8 @@ builder.Services.AddCors(opt => opt.AddDefaultPolicy(p =>
     p.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod()));
 
 var app = builder.Build();
+
+app.UseMiddleware<GlobalExceptionMiddleware>();
 
 using (var scope = app.Services.CreateScope())
 {

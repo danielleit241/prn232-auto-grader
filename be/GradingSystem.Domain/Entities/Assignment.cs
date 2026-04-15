@@ -7,7 +7,9 @@ public class Assignment : BaseEntity
 
     // File paths stored under /storage/assignments/{Id}/
     public string? DatabaseSqlPath { get; set; }   // Q1: database.sql
-    public string? GivenApiZipPath { get; set; }   // Q2: given-api.zip
+
+    // Shared URL used for all Q2 submissions in this assignment.
+    public string? GivenApiBaseUrl { get; set; }
 
     public ICollection<Question> Questions { get; set; } = [];
     public ICollection<Submission> Submissions { get; set; } = [];
