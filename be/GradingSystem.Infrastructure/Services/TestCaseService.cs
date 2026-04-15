@@ -28,13 +28,8 @@ public class TestCaseService(IUnitOfWork unitOfWork) : ITestCaseService
             throw new BadRequestException("At least one test case is required.");
         }
 
-        var question = await unitOfWork.Questions.GetByIdAsync(questionId)
+        _ = await unitOfWork.Questions.GetByIdAsync(questionId)
             ?? throw new NotFoundException($"Question '{questionId}' not found.");
-
-        if (question.Type != QuestionType.Razor)
-        {
-            throw new BadRequestException("Test cases in this API are only supported for Razor questions.");
-        }
 
         var created = new List<TestCaseDto>(requests.Count);
 
@@ -74,7 +69,7 @@ public class TestCaseService(IUnitOfWork unitOfWork) : ITestCaseService
     )
     {
         var entities = await unitOfWork.TestCases.FindAsync(t => t.QuestionId == questionId);
-        return entities.Select(Map);
+        return entities.OrderBy(t => t.CreatedAt).Select(Map);
     }
 
     private static string BuildName(string httpMethod, string urlTemplate)

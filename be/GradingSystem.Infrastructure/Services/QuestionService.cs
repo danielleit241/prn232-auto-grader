@@ -68,7 +68,7 @@ public class QuestionService(IUnitOfWork unitOfWork) : IQuestionService
     public async Task<IEnumerable<QuestionDto>> GetByAssignmentIdAsync(Guid assignmentId, CancellationToken ct = default)
     {
         var entities = await unitOfWork.Questions.FindAsync(q => q.AssignmentId == assignmentId);
-        return entities.Select(Map);
+        return entities.OrderBy(q => q.CreatedAt).Select(Map);
     }
 
     private static QuestionDto Map(Question entity) => new()
