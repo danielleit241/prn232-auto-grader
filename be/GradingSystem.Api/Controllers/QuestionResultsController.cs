@@ -17,9 +17,9 @@ public class QuestionResultsController(IUnitOfWork uow) : BaseApiController
             return BadRequest($"AdjustedScore must be between 0 and {entity.MaxScore}.");
 
         entity.AdjustedScore = req.AdjustedScore;
-        entity.AdjustReason  = req.AdjustReason;
-        entity.AdjustedBy    = req.AdjustedBy;
-        entity.AdjustedAt    = DateTime.UtcNow;
+        entity.AdjustReason = req.AdjustReason;
+        entity.AdjustedBy = req.AdjustedBy;
+        entity.AdjustedAt = DateTime.UtcNow;
 
         uow.QuestionResults.Update(entity);
         await uow.SaveChangesAsync(ct);
@@ -35,9 +35,9 @@ public class QuestionResultsController(IUnitOfWork uow) : BaseApiController
             return NotFound($"QuestionResult '{id}' not found.");
 
         entity.AdjustedScore = null;
-        entity.AdjustReason  = null;
-        entity.AdjustedBy    = null;
-        entity.AdjustedAt    = null;
+        entity.AdjustReason = null;
+        entity.AdjustedBy = null;
+        entity.AdjustedAt = null;
 
         uow.QuestionResults.Update(entity);
         await uow.SaveChangesAsync(ct);
@@ -47,16 +47,16 @@ public class QuestionResultsController(IUnitOfWork uow) : BaseApiController
 
     private static QuestionResultDto MapDto(GradingSystem.Domain.Entities.QuestionResult r) => new()
     {
-        Id            = r.Id,
-        SubmissionId  = r.SubmissionId,
-        QuestionId    = r.QuestionId,
-        Score         = r.Score,
-        MaxScore      = r.MaxScore,
-        FinalScore    = r.FinalScore,
-        Detail        = r.Detail,
+        Id = r.Id,
+        SubmissionId = r.SubmissionId,
+        QuestionId = r.QuestionId,
+        Score = r.Score,
+        MaxScore = r.MaxScore,
+        FinalScore = r.FinalScore,
+        Detail = r.Detail,
         AdjustedScore = r.AdjustedScore,
-        AdjustReason  = r.AdjustReason,
-        AdjustedBy    = r.AdjustedBy,
-        AdjustedAt    = r.AdjustedAt,
+        AdjustReason = r.AdjustReason,
+        AdjustedBy = r.AdjustedBy,
+        AdjustedAt = r.AdjustedAt,
     };
 }

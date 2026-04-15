@@ -9,12 +9,19 @@ namespace GradingSystem.Application.Services;
 
 public class SubmissionService(IUnitOfWork uow, IConfiguration config) : ISubmissionService
 {
+    private static readonly Regex StudentIdRegex = new(@"[a-zA-Z]{2}\d{6}", RegexOptions.Compiled);
     private readonly string _basePath = config["Storage:BasePath"] ?? "/storage";
 
     public async Task<SubmissionDto> UploadAsync(UploadSubmissionRequest req, CancellationToken ct = default)
     {
-        if (!string.Equals(Path.GetExtension(req.File.FileName), ".zip", StringComparison.OrdinalIgnoreCase))
+        if (req.File is null)
+            throw new BadRequestException("Zip file is required.");
+
+        if (!string.Equals(Path.GetExtension(req.File.Value.FileName), ".zip", StringComparison.OrdinalIgnoreCase))
             throw new BadRequestException("Only .zip files are accepted.");
+
+        _ = await uow.Assignments.GetByIdAsync(req.AssignmentId)
+            ?? throw new NotFoundException($"Assignment '{req.AssignmentId}' not found.");
 
         var entity = new Submission
         {
@@ -24,12 +31,12 @@ public class SubmissionService(IUnitOfWork uow, IConfiguration config) : ISubmis
             ArtifactZipPath = string.Empty,
         };
 
-        var dir = Path.Combine(_basePath, "submissions", entity.Id.ToString());
+        var dir  = Path.Combine(_basePath, "submissions", entity.Id.ToString());
         Directory.CreateDirectory(dir);
         var path = Path.Combine(dir, "artifact.zip");
 
         await using (var fs = File.Create(path))
-            await req.File.Content.CopyToAsync(fs, ct);
+            await req.File.Value.Content.CopyToAsync(fs, ct);
 
         entity.ArtifactZipPath = path.Replace('\\', '/');
 
@@ -52,13 +59,18 @@ public class SubmissionService(IUnitOfWork uow, IConfiguration config) : ISubmis
 
         var results = await uow.QuestionResults.FindAsync(r => r.SubmissionId == submissionId);
 
-        return results.Select(r => MapResult(r, submission.StudentCode));
+        return results
+            .OrderBy(r => r.CreatedAt)
+            .Select(r => MapResult(r, submission.StudentCode));
     }
 
     public async Task<GradingJobDto> TriggerGradeAsync(Guid submissionId, CancellationToken ct = default)
     {
         var submission = await uow.Submissions.GetByIdAsync(submissionId)
             ?? throw new NotFoundException($"Submission '{submissionId}' not found.");
+
+        if (submission.Status == SubmissionStatus.Grading)
+            throw new ConflictException($"Submission '{submissionId}' is already being graded.");
 
         var job = new GradingJob
         {
@@ -67,9 +79,8 @@ public class SubmissionService(IUnitOfWork uow, IConfiguration config) : ISubmis
         };
 
         submission.Status = SubmissionStatus.Grading;
-
-        await uow.GradingJobs.AddAsync(job);
         uow.Submissions.Update(submission);
+        await uow.GradingJobs.AddAsync(job);
         await uow.SaveChangesAsync(ct);
 
         return MapJob(job);
@@ -77,11 +88,12 @@ public class SubmissionService(IUnitOfWork uow, IConfiguration config) : ISubmis
 
     private static SubmissionDto Map(Submission e) => new()
     {
-        Id           = e.Id,
-        AssignmentId = e.AssignmentId,
-        StudentCode  = e.StudentCode,
-        Status       = e.Status,
-        CreatedAt    = e.CreatedAt,
+        Id              = e.Id,
+        AssignmentId    = e.AssignmentId,
+        StudentCode     = e.StudentCode,
+        ArtifactZipPath = e.ArtifactZipPath,
+        Status          = e.Status,
+        CreatedAt       = e.CreatedAt,
     };
 
     private static GradingJobDto MapJob(GradingJob e) => new()
@@ -113,7 +125,7 @@ public class SubmissionService(IUnitOfWork uow, IConfiguration config) : ISubmis
 
     private static string ParseStudentId(string code)
     {
-        var m = Regex.Match(code, @"[a-zA-Z]{2}\d{6}");
+        var m = StudentIdRegex.Match(code);
         return m.Success ? m.Value : code;
     }
 }

@@ -15,12 +15,12 @@ public class GradingJobsController(IUnitOfWork uow) : BaseApiController
 
         return Ok(new GradingJobDto
         {
-            Id           = entity.Id,
+            Id = entity.Id,
             SubmissionId = entity.SubmissionId,
-            Status       = entity.Status,
+            Status = entity.Status,
             ErrorMessage = entity.ErrorMessage,
-            StartedAt    = entity.StartedAt,
-            FinishedAt   = entity.FinishedAt,
+            StartedAt = entity.StartedAt,
+            FinishedAt = entity.FinishedAt,
         });
     }
 }

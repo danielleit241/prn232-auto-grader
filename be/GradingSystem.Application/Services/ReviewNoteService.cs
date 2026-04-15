@@ -12,6 +12,9 @@ public class ReviewNoteService(IUnitOfWork uow) : IReviewNoteService
         _ = await uow.Submissions.GetByIdAsync(submissionId)
             ?? throw new NotFoundException($"Submission '{submissionId}' not found.");
 
+        if (string.IsNullOrWhiteSpace(req.Content))
+            throw new BadRequestException("Content is required.");
+
         var existing = (await uow.ReviewNotes.FindAsync(n => n.SubmissionId == submissionId))
                        .FirstOrDefault();
 
@@ -20,26 +23,28 @@ public class ReviewNoteService(IUnitOfWork uow) : IReviewNoteService
             existing = new ReviewNote
             {
                 SubmissionId = submissionId,
-                Content      = req.Content,
-                ReviewedBy   = req.ReviewedBy,
+                Content      = req.Content.Trim(),
+                ReviewedBy   = req.ReviewedBy?.Trim(),
             };
             await uow.ReviewNotes.AddAsync(existing);
         }
         else
         {
-            existing.Content    = req.Content;
-            existing.ReviewedBy = req.ReviewedBy;
+            existing.Content    = req.Content.Trim();
+            existing.ReviewedBy = req.ReviewedBy?.Trim();
             uow.ReviewNotes.Update(existing);
         }
 
         await uow.SaveChangesAsync(ct);
 
-        return new ReviewNoteDto
-        {
-            Id           = existing.Id,
-            SubmissionId = existing.SubmissionId,
-            Content      = existing.Content,
-            ReviewedBy   = existing.ReviewedBy,
-        };
+        return Map(existing);
     }
+
+    private static ReviewNoteDto Map(ReviewNote e) => new()
+    {
+        Id           = e.Id,
+        SubmissionId = e.SubmissionId,
+        Content      = e.Content,
+        ReviewedBy   = e.ReviewedBy,
+    };
 }

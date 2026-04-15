@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace GradingSystem.Application.DTOs;
 
 public class ReviewNoteDto
@@ -10,6 +12,8 @@ public class ReviewNoteDto
 
 public class UpdateReviewNoteRequest
 {
+    [Required]
     public string Content { get; set; } = string.Empty;
+
     public string? ReviewedBy { get; set; }
 }

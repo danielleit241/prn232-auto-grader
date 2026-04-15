@@ -32,15 +32,14 @@ public class TestRunner(ILogger<TestRunner> logger)
             var testCases = (await uow.TestCases.FindAsync(tc => tc.QuestionId == question.Id))
                             .OrderBy(tc => tc.CreatedAt).ToList();
 
-            var details    = new List<TestCaseResult>();
-            int totalScore = 0;
+            List<TestCaseResult> details;
 
-            foreach (var tc in testCases)
-            {
-                var result = await RunTestCaseAsync(tc, app.Port, client, ct);
-                details.Add(result);
-                if (result.Pass) totalScore += tc.Score;
-            }
+            if (question.Type == QuestionType.Api)
+                details = await RunSwaggerCasesAsync(testCases, app.Port, client, ct);
+            else
+                details = await RunHttpCasesAsync(testCases, app.Port, client, ct);
+
+            int totalScore = details.Sum(r => r.AwardedScore);
 
             await uow.QuestionResults.AddAsync(new QuestionResult
             {
@@ -57,7 +56,143 @@ public class TestRunner(ILogger<TestRunner> logger)
         await uow.SaveChangesAsync(ct);
     }
 
-    private static async Task<TestCaseResult> RunTestCaseAsync(
+    // ── Swagger mode (QuestionType.Api) ──────────────────────────────────────
+
+    private async Task<List<TestCaseResult>> RunSwaggerCasesAsync(
+        List<TestCase> testCases, int port, HttpClient client, CancellationToken ct)
+    {
+        var swaggerUrl = $"http://localhost:{port}/swagger/v1/swagger.json";
+        JsonDocument? swaggerDoc = null;
+        string? fetchError    = null;
+
+        try
+        {
+            var resp = await client.GetAsync(swaggerUrl, ct);
+            var body = await resp.Content.ReadAsStringAsync(ct);
+
+            if (resp.IsSuccessStatusCode)
+                swaggerDoc = JsonDocument.Parse(body);
+            else
+                fetchError = $"swagger.json returned HTTP {(int)resp.StatusCode}";
+        }
+        catch (Exception ex)
+        {
+            fetchError = $"Failed to fetch swagger.json: {ex.Message}";
+        }
+
+        logger.LogInformation("Swagger fetch {Url}: {Result}", swaggerUrl,
+            swaggerDoc != null ? "OK" : fetchError);
+
+        return testCases.Select(tc =>
+            swaggerDoc != null
+                ? EvaluateSwaggerCase(tc, swaggerDoc, swaggerUrl)
+                : FailResult(tc, swaggerUrl, fetchError!)).ToList();
+    }
+
+    private static TestCaseResult EvaluateSwaggerCase(TestCase tc, JsonDocument swagger, string swaggerUrl)
+    {
+        var expect = JsonSerializer.Deserialize<ExpectJson>(tc.ExpectJson,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+
+        var root = swagger.RootElement;
+
+        if (!root.TryGetProperty("paths", out var paths))
+            return FailResult(tc, swaggerUrl, "swagger.json has no 'paths'");
+
+        if (!paths.TryGetProperty(tc.UrlTemplate, out var pathItem))
+            return FailResult(tc, swaggerUrl, $"Path '{tc.UrlTemplate}' not found in swagger");
+
+        var methodKey = tc.HttpMethod.ToLowerInvariant();
+        if (!pathItem.TryGetProperty(methodKey, out var operation))
+            return FailResult(tc, swaggerUrl, $"Method '{tc.HttpMethod}' not found for path '{tc.UrlTemplate}'");
+
+        if (expect.Fields is { Count: > 0 })
+        {
+            var schemaError = CheckResponseSchema(root, operation, expect.Fields);
+            if (schemaError != null)
+                return FailResult(tc, swaggerUrl, schemaError);
+        }
+
+        return new TestCaseResult
+        {
+            TestCaseId   = tc.Id,
+            Pass         = true,
+            AwardedScore = tc.Score,
+            HttpMethod   = tc.HttpMethod,
+            Url          = $"{swaggerUrl} — {tc.HttpMethod} {tc.UrlTemplate}",
+            ActualStatus = 200,
+        };
+    }
+
+    /// <summary>
+    /// Walks the 200-response schema of an operation and verifies all <paramref name="fields"/> exist
+    /// as properties. Returns an error string if any are missing, null if OK or schema can't be resolved.
+    /// </summary>
+    private static string? CheckResponseSchema(JsonElement root, JsonElement operation, List<string> fields)
+    {
+        if (!operation.TryGetProperty("responses", out var responses)) return null;
+        if (!responses.TryGetProperty("200", out var resp200)) return null;
+        if (!resp200.TryGetProperty("content", out var content)) return null;
+
+        JsonElement schema = default;
+        bool found = false;
+
+        foreach (var mediaType in content.EnumerateObject())
+        {
+            if (mediaType.Value.TryGetProperty("schema", out schema))
+            {
+                found = true;
+                break;
+            }
+        }
+
+        if (!found) return null;
+
+        schema = ResolveRef(root, schema);
+
+        // Unwrap array → check items schema
+        if (schema.TryGetProperty("type", out var typeEl) && typeEl.GetString() == "array"
+            && schema.TryGetProperty("items", out var items))
+        {
+            schema = ResolveRef(root, items);
+        }
+
+        if (!schema.TryGetProperty("properties", out var props)) return null;
+
+        var missing = fields.Where(f => !props.TryGetProperty(f, out _)).ToList();
+        return missing.Count > 0
+            ? $"Response schema missing properties: {string.Join(", ", missing)}"
+            : null;
+    }
+
+    private static JsonElement ResolveRef(JsonElement root, JsonElement schema)
+    {
+        if (!schema.TryGetProperty("$ref", out var refEl)) return schema;
+
+        // "#/components/schemas/ProductDto" → ["components","schemas","ProductDto"]
+        var parts   = (refEl.GetString() ?? "").TrimStart('#', '/').Split('/');
+        var current = root;
+
+        foreach (var part in parts)
+        {
+            if (!current.TryGetProperty(part, out current)) return schema;
+        }
+
+        return current;
+    }
+
+    // ── HTTP test-case mode (QuestionType.Razor) ─────────────────────────────
+
+    private static async Task<List<TestCaseResult>> RunHttpCasesAsync(
+        List<TestCase> testCases, int port, HttpClient client, CancellationToken ct)
+    {
+        var results = new List<TestCaseResult>(testCases.Count);
+        foreach (var tc in testCases)
+            results.Add(await RunHttpTestCaseAsync(tc, port, client, ct));
+        return results;
+    }
+
+    private static async Task<TestCaseResult> RunHttpTestCaseAsync(
         TestCase tc, int port, HttpClient client, CancellationToken ct)
     {
         var url    = $"http://localhost:{port}{tc.UrlTemplate}";
@@ -78,31 +213,22 @@ public class TestRunner(ILogger<TestRunner> logger)
         try
         {
             response = await client.SendAsync(request, ct);
-            body = await response.Content.ReadAsStringAsync(ct);
+            body     = await response.Content.ReadAsStringAsync(ct);
         }
         catch (Exception ex)
         {
-            return new TestCaseResult
-            {
-                TestCaseId   = tc.Id,
-                Pass         = false,
-                AwardedScore = 0,
-                HttpMethod   = tc.HttpMethod,
-                Url          = url,
-                ActualStatus = 0,
-                FailReason   = $"Exception: {ex.Message}",
-            };
+            return FailResult(tc, url, $"Exception: {ex.Message}");
         }
 
         var actualStatus = (int)response.StatusCode;
         var contentType  = response.Content.Headers.ContentType?.MediaType;
-        var isJson = contentType == "application/json";
-        var isHtml = contentType?.Contains("text/html") == true;
+        var isJson       = contentType == "application/json";
+        var isHtml       = contentType?.Contains("text/html") == true;
 
         var expect = JsonSerializer.Deserialize<ExpectJson>(tc.ExpectJson,
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
 
-        string? failReason = Evaluate(expect, actualStatus, body, isJson, isHtml);
+        string? failReason = EvaluateHttp(expect, actualStatus, body, isJson, isHtml);
         bool pass = failReason == null;
 
         return new TestCaseResult
@@ -118,7 +244,7 @@ public class TestRunner(ILogger<TestRunner> logger)
         };
     }
 
-    private static string? Evaluate(ExpectJson expect, int actualStatus, string body, bool isJson, bool isHtml)
+    private static string? EvaluateHttp(ExpectJson expect, int actualStatus, string body, bool isJson, bool isHtml)
     {
         if (expect.Status != null && actualStatus != expect.Status)
             return $"Expected status {expect.Status}, got {actualStatus}";
@@ -178,6 +304,19 @@ public class TestRunner(ILogger<TestRunner> logger)
 
         return null;
     }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private static TestCaseResult FailResult(TestCase tc, string url, string reason) => new()
+    {
+        TestCaseId   = tc.Id,
+        Pass         = false,
+        AwardedScore = 0,
+        HttpMethod   = tc.HttpMethod,
+        Url          = url,
+        ActualStatus = 0,
+        FailReason   = reason,
+    };
 
     private static string JsonToQueryString(string inputJson)
     {

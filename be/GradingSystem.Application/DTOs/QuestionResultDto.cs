@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace GradingSystem.Application.DTOs;
 
 public class QuestionResultDto
@@ -19,7 +21,11 @@ public class QuestionResultDto
 
 public class AdjustScoreRequest
 {
+    [Required]
     public int AdjustedScore { get; set; }
+
+    [Required]
     public string AdjustReason { get; set; } = string.Empty;
+
     public string? AdjustedBy { get; set; }
 }

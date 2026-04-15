@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using GradingSystem.Application.DTOs;
 using GradingSystem.Application.Exceptions;
 using GradingSystem.Application.Interfaces;
@@ -10,6 +12,12 @@ public class TestCaseService(IUnitOfWork unitOfWork) : ITestCaseService
     private static readonly HashSet<string> AllowedHttpMethods = new(StringComparer.Ordinal)
     {
         "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS",
+    };
+
+    private static readonly JsonSerializerOptions SerializerOpts = new()
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        PropertyNameCaseInsensitive = true,
     };
 
     public async Task<IReadOnlyList<TestCaseDto>> CreateManyAsync(
@@ -35,11 +43,11 @@ public class TestCaseService(IUnitOfWork unitOfWork) : ITestCaseService
             var entity = new TestCase
             {
                 QuestionId  = questionId,
-                Name        = BuildName(req.HttpMethod, req.UrlTemplate),
+                Name        = BuildName(normalizedMethod, req.UrlTemplate),
                 HttpMethod  = normalizedMethod,
                 UrlTemplate = req.UrlTemplate.Trim(),
                 InputJson   = req.InputJson?.Trim(),
-                ExpectJson  = req.ExpectJson.Trim(),
+                ExpectJson  = SerializeExpect(req),
                 Score       = req.Score,
             };
 
@@ -58,21 +66,71 @@ public class TestCaseService(IUnitOfWork unitOfWork) : ITestCaseService
         return entities.OrderBy(t => t.CreatedAt).Select(Map);
     }
 
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
     private static string BuildName(string httpMethod, string urlTemplate)
     {
-        var generated = $"{httpMethod.Trim().ToUpperInvariant()} {urlTemplate.Trim()}";
+        var generated = $"{httpMethod} {urlTemplate.Trim()}";
         return generated.Length <= 100 ? generated : generated[..100];
     }
 
-    private static TestCaseDto Map(TestCase entity) => new()
+    /// <summary>Serializes typed expect fields into the JSON string stored in the entity.</summary>
+    private static string SerializeExpect(CreateTestCaseRequest req) =>
+        JsonSerializer.Serialize(new
+        {
+            status           = req.ExpectedStatus,
+            isArray          = req.IsArray,
+            fields           = req.Fields,
+            value            = req.Value,
+            selector         = req.Selector,
+            selectorText     = req.SelectorText,
+            selectorMinCount = req.SelectorMinCount,
+        }, SerializerOpts);
+
+    /// <summary>Deserializes the stored ExpectJson string back into typed DTO fields.</summary>
+    private static TestCaseDto Map(TestCase entity)
     {
-        Id          = entity.Id,
-        QuestionId  = entity.QuestionId,
-        Name        = entity.Name,
-        HttpMethod  = entity.HttpMethod,
-        UrlTemplate = entity.UrlTemplate,
-        InputJson   = entity.InputJson,
-        ExpectJson  = entity.ExpectJson,
-        Score       = entity.Score,
-    };
+        var dto = new TestCaseDto
+        {
+            Id          = entity.Id,
+            QuestionId  = entity.QuestionId,
+            Name        = entity.Name,
+            HttpMethod  = entity.HttpMethod,
+            UrlTemplate = entity.UrlTemplate,
+            InputJson   = entity.InputJson,
+            Score       = entity.Score,
+        };
+
+        if (string.IsNullOrWhiteSpace(entity.ExpectJson)) return dto;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(entity.ExpectJson);
+            var root = doc.RootElement;
+
+            if (root.TryGetProperty("status", out var s) && s.ValueKind != JsonValueKind.Null)
+                dto.ExpectedStatus = s.GetInt32();
+
+            if (root.TryGetProperty("isArray", out var a) && a.ValueKind != JsonValueKind.Null)
+                dto.IsArray = a.GetBoolean();
+
+            if (root.TryGetProperty("fields", out var f) && f.ValueKind == JsonValueKind.Array)
+                dto.Fields = f.EnumerateArray().Select(x => x.GetString()!).ToList();
+
+            if (root.TryGetProperty("value", out var v) && v.ValueKind != JsonValueKind.Null)
+                dto.Value = v.GetString();
+
+            if (root.TryGetProperty("selector", out var sel) && sel.ValueKind != JsonValueKind.Null)
+                dto.Selector = sel.GetString();
+
+            if (root.TryGetProperty("selectorText", out var st) && st.ValueKind != JsonValueKind.Null)
+                dto.SelectorText = st.GetString();
+
+            if (root.TryGetProperty("selectorMinCount", out var smc) && smc.ValueKind != JsonValueKind.Null)
+                dto.SelectorMinCount = smc.GetInt32();
+        }
+        catch { /* malformed stored JSON — return dto with defaults */ }
+
+        return dto;
+    }
 }

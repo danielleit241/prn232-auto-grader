@@ -1,4 +1,5 @@
 using GradingSystem.Application.DTOs;
+using GradingSystem.Application.Exceptions;
 using GradingSystem.Application.Interfaces;
 using GradingSystem.Domain.Entities;
 
@@ -8,6 +9,9 @@ public class ExportService(IUnitOfWork uow) : IExportService
 {
     public async Task<ExportJobDto> CreateAsync(CreateExportRequest req, CancellationToken ct = default)
     {
+        _ = await uow.Assignments.GetByIdAsync(req.AssignmentId)
+            ?? throw new NotFoundException($"Assignment '{req.AssignmentId}' not found.");
+
         var job = new ExportJob
         {
             AssignmentId = req.AssignmentId,
