@@ -2,6 +2,7 @@
 ### Base URL: http://localhost:5049
 
 @base = http://localhost:5049
+@api  = {{base}}/api/v1.0
 
 # ── Paste IDs sau khi chạy từng bước ────────────────────────────────────────
 @assignmentId = 00000000-0000-0000-0000-000000000000
@@ -10,6 +11,7 @@
 @submissionId = 00000000-0000-0000-0000-000000000000
 @gradingJobId = 00000000-0000-0000-0000-000000000000
 @q1ResultId   = 00000000-0000-0000-0000-000000000000
+@q2ResultId   = 00000000-0000-0000-0000-000000000000
 @exportJobId  = 00000000-0000-0000-0000-000000000000
 
 
@@ -18,7 +20,7 @@
 ###############################################################################
 
 ### 1.1 Tạo Assignment
-POST {{base}}/assignments
+POST {{api}}/assignments
 Content-Type: application/json
 
 {
@@ -28,39 +30,30 @@ Content-Type: application/json
 
 ###
 
-### 1.2 Tạo Q1 (Api – chấm swagger.json)
-POST {{base}}/assignments/{{assignmentId}}/questions
+### 1.2 Tạo Questions (Q1 + Q2 cùng lúc)
+POST {{api}}/assignments/{{assignmentId}}/questions
 Content-Type: application/json
 
-{
-  "title": "Câu 1: REST API",
-  "type": 0,
-  "maxScore": 10,
-  "artifactFolderName": "Q1"
-}
+[
+  {
+    "title": "Câu 1: REST API",
+    "type": 0,
+    "maxScore": 5,
+    "artifactFolderName": "Q1"
+  },
+  {
+    "title": "Câu 2: Razor Pages",
+    "type": 1,
+    "maxScore": 5,
+    "artifactFolderName": "Q2"
+  }
+]
 
 ###
 
-### 1.3 Tạo Q2 (Razor – chấm HTTP thực)
-POST {{base}}/assignments/{{assignmentId}}/questions
-Content-Type: application/json
-
-{
-  "title": "Câu 2: Razor Pages",
-  "type": 1,
-  "maxScore": 10,
-  "artifactFolderName": "Q2"
-}
-
-###############################################################################
-# PHASE 1 – RESOURCES (upload đề bài cho Worker dùng)
-# – databaseSql : script tạo DB cho Q1 (SQL Server)
-# – givenApiBaseUrl : URL teacher API đang chạy để Q2 gọi
-###############################################################################
-
-### 1.4 Upload database.sql + set GivenAPI URL
-# Chạy teacher's Q1 trước, ghi lại port → đặt vào givenApiBaseUrl
-PUT {{base}}/assignments/{{assignmentId}}/resources
+### 1.3 Upload database.sql + set GivenAPI URL
+# Chạy teacher API trước, ghi lại port → đặt vào givenApiBaseUrl
+PUT {{api}}/assignments/{{assignmentId}}/resources
 Content-Type: multipart/form-data; boundary=----boundary
 
 ------boundary
@@ -75,28 +68,26 @@ Content-Type: text/plain
 ------boundary--
 
 ###############################################################################
-# PHASE 1.4 – TEST CASES Q1 (mixed: swagger schema + HTTP behaviour)
+# PHASE 1.4 – TEST CASES Q1  (type=Api, maxScore=5)
 #
-# Swagger test cases (no inputJson / no expectedStatus):
-#   Worker validates swagger.json — path, method, response schema fields.
+# Swagger mode  → không có expectedStatus VÀ không có input
+#   Worker đọc swagger.json, kiểm tra path/method tồn tại + response schema
 #
-# HTTP test cases (có inputJson hoặc expectedStatus):
-#   Worker gọi thực endpoint, kiểm tra status + JSON fields.
+# HTTP mode     → có expectedStatus HOẶC có input
+#   Worker gọi thực endpoint, kiểm tra status + JSON fields
 #
-# Nếu cần tạo lại: DELETE {{base}}/questions/{{q1Id}}/test-cases trước.
+# Tổng score phải bằng maxScore (5đ). Xoá trước nếu cần tạo lại.
 ###############################################################################
 
-### 1.5 Tạo test cases Q1  (tổng 10đ)
-# ── Swagger schema (4 test cases) ──────────────────────────────────────────
-# GET /api/students               → array, fields: studentId studentName email gpa (2đ)
-# GET /api/student-performance    → object: data totalStudents totalPages current   (2đ)
-# PUT /api/enrollments/{id}/grade → endpoint tồn tại                               (1đ)
-# DELETE /api/enrollments/{id}    → endpoint tồn tại                               (1đ)
-# ── HTTP behaviour (3 test cases) ──────────────────────────────────────────
-# GET /api/student-performance?page=1&pageSize=2 → 200, có đủ pagination fields    (2đ)
-# GET /api/students?name=nguyen                  → 200, trả về array               (1đ)
-# DELETE /api/enrollments/0                      → 404 (không tồn tại)             (1đ)
-POST {{base}}/questions/{{q1Id}}/test-cases
+### 1.4 Tạo test cases Q1  (tổng 5đ)
+# ── Swagger (4 cases) ───────────────────────────────────────────────────────
+# GET /api/students               → array, fields: studentId studentName email gpa   (1đ)
+# GET /api/student-performance    → object: data totalStudents totalPages current     (1đ)
+# PUT /api/enrollments/{id}/grade → endpoint tồn tại                                 (1đ)
+# DELETE /api/enrollments/{id}    → endpoint tồn tại                                 (1đ)
+# ── HTTP (1 case) ───────────────────────────────────────────────────────────
+# DELETE /api/enrollments/0                       → 404                              (1đ)
+POST {{api}}/questions/{{q1Id}}/test-cases
 Content-Type: application/json
 
 [
@@ -105,13 +96,13 @@ Content-Type: application/json
     "urlTemplate": "/api/students",
     "isArray": true,
     "fields": ["studentId", "studentName", "email", "gpa"],
-    "score": 2
+    "score": 1
   },
   {
     "httpMethod": "GET",
     "urlTemplate": "/api/student-performance",
     "fields": ["data", "totalStudents", "totalPages", "current", "pageSize"],
-    "score": 2
+    "score": 1
   },
   {
     "httpMethod": "PUT",
@@ -124,22 +115,6 @@ Content-Type: application/json
     "score": 1
   },
   {
-    "httpMethod": "GET",
-    "urlTemplate": "/api/student-performance",
-    "input": { "page": 1, "pageSize": 2 },
-    "expectedStatus": 200,
-    "fields": ["data", "totalPages", "current", "pageSize"],
-    "score": 2
-  },
-  {
-    "httpMethod": "GET",
-    "urlTemplate": "/api/students",
-    "input": { "name": "nguyen" },
-    "expectedStatus": 200,
-    "isArray": true,
-    "score": 1
-  },
-  {
     "httpMethod": "DELETE",
     "urlTemplate": "/api/enrollments/0",
     "expectedStatus": 404,
@@ -148,16 +123,20 @@ Content-Type: application/json
 ]
 
 ###############################################################################
-# PHASE 1.5 – TEST CASES Q2 (HTTP mode)
-# Worker gọi thực endpoint, kiểm tra HTML trả về
+# PHASE 1.5 – TEST CASES Q2  (type=Razor, maxScore=5)
+#
+# Tất cả đều là HTTP mode — gọi thật vào app, kiểm tra HTML response.
+# App sinh viên nhận env GivenAPIBaseUrl để gọi API lấy data.
+# Tổng score phải bằng maxScore (5đ).
 ###############################################################################
 
-### 1.6 Tạo test cases Q2
-# GET /Instructor              → 200, có <table> (danh sách)            (3đ)
-# GET /Instructor              → 200, có <form> (ô tìm kiếm)            (2đ)
-# GET /Instructor?name=A       → 200, không crash khi filter             (2đ)
-# GET /Instructor/{id}         → 200, có <table> (danh sách courses)    (3đ)
-POST {{base}}/questions/{{q2Id}}/test-cases
+### 1.5 Tạo test cases Q2  (tổng 5đ)
+# GET /Instructor              → 200, có <table>                          (1đ)
+# GET /Instructor              → 200, có <form>                           (1đ)
+# GET /Instructor              → 200, table có ít nhất 1 dòng dữ liệu    (1đ)
+# GET /Instructor/{id}         → 200, có <table>                          (1đ)
+# GET /Instructor/{id}         → 200, có <dl> hoặc detail layout          (1đ)
+POST {{api}}/questions/{{q2Id}}/test-cases
 Content-Type: application/json
 
 [
@@ -166,27 +145,37 @@ Content-Type: application/json
     "urlTemplate": "/Instructor",
     "expectedStatus": 200,
     "selector": "table",
-    "score": 3
+    "score": 1
   },
   {
     "httpMethod": "GET",
     "urlTemplate": "/Instructor",
     "expectedStatus": 200,
     "selector": "form",
-    "score": 2
+    "score": 1
   },
   {
     "httpMethod": "GET",
-    "urlTemplate": "/Instructor?name=A",
+    "urlTemplate": "/Instructor",
     "expectedStatus": 200,
-    "score": 2
+    "selector": "table tbody tr",
+    "selectorMinCount": 1,
+    "score": 1
   },
   {
     "httpMethod": "GET",
     "urlTemplate": "/Instructor/1",
     "expectedStatus": 200,
     "selector": "table",
-    "score": 3
+    "score": 1
+  },
+  {
+    "httpMethod": "GET",
+    "urlTemplate": "/Instructor/1",
+    "expectedStatus": 200,
+    "selector": "table tbody tr",
+    "selectorMinCount": 1,
+    "score": 1
   }
 ]
 
@@ -197,9 +186,9 @@ Content-Type: application/json
 ### 2.1 Upload artifact.zip
 # Cấu trúc zip bắt buộc:
 #   artifact.zip/
-#   ├── Q1/    ← toàn bộ output của: dotnet publish Q1 -o publish/Q1
-#   └── Q2/    ← toàn bộ output của: dotnet publish Q2 -o publish/Q2
-POST {{base}}/submissions/upload
+#   ├── Q1/    ← output của: dotnet publish Q1 -o publish/Q1
+#   └── Q2/    ← output của: dotnet publish Q2 -o publish/Q2
+POST {{api}}/submissions/upload
 Content-Type: multipart/form-data; boundary=----boundary
 
 ------boundary
@@ -222,28 +211,28 @@ Content-Type: application/zip
 ###############################################################################
 
 ### 3.1 Trigger grading
-POST {{base}}/submissions/{{submissionId}}/grade
+POST {{api}}/submissions/{{submissionId}}/grade
 
 ###
 
 ### 3.2 Poll trạng thái (Pending → Running → Done/Failed)
-GET {{base}}/grading-jobs/{{gradingJobId}}
+GET {{api}}/grading-jobs/{{gradingJobId}}
 
 ###
 
-### 3.3 Xem kết quả (sau khi job Done)
-GET {{base}}/submissions/{{submissionId}}/results
+### 3.3 Xem kết quả từng câu (sau khi job Done)
+GET {{api}}/submissions/{{submissionId}}/question-results
 
 ###############################################################################
 # PHASE 4 – REVIEW
 ###############################################################################
 
-### 4.1 Chỉnh điểm Q1 thủ công
-PUT {{base}}/question-results/{{q1ResultId}}/adjust
+### 4.1 Chỉnh điểm thủ công
+PUT {{api}}/question-results/{{q1ResultId}}/adjust
 Content-Type: application/json
 
 {
-  "adjustedScore": 9,
+  "adjustedScore": 4,
   "adjustReason": "Thiếu XML response format nhưng logic đúng",
   "adjustedBy": "gv@fpt.edu.vn"
 }
@@ -251,12 +240,12 @@ Content-Type: application/json
 ###
 
 ### 4.2 Hủy chỉnh điểm (về điểm gốc)
-DELETE {{base}}/question-results/{{q1ResultId}}/adjust
+DELETE {{api}}/question-results/{{q1ResultId}}/adjust
 
 ###
 
 ### 4.3 Nhận xét submission
-PUT {{base}}/submissions/{{submissionId}}/notes
+PUT {{api}}/submissions/{{submissionId}}/notes
 Content-Type: application/json
 
 {
@@ -269,7 +258,7 @@ Content-Type: application/json
 ###############################################################################
 
 ### 5.1 Tạo export job
-POST {{base}}/exports
+POST {{api}}/exports
 Content-Type: application/json
 
 {
@@ -278,67 +267,72 @@ Content-Type: application/json
 
 ###
 
-### 5.2 Tải file Excel
-GET {{base}}/exports/{{exportJobId}}/download
+### 5.2 Tải file Excel (poll cho đến khi status Done)
+GET {{api}}/exports/{{exportJobId}}/download
 
 ###############################################################################
 # QUICK CHECKS
 ###############################################################################
 
 ### Danh sách assignments
-GET {{base}}/assignments
+GET {{api}}/assignments
 
 ###
 
 ### Assignment detail
-GET {{base}}/assignments/{{assignmentId}}
+GET {{api}}/assignments/{{assignmentId}}
 
 ###
 
 ### Questions của assignment
-GET {{base}}/assignments/{{assignmentId}}/questions
+GET {{api}}/assignments/{{assignmentId}}/questions
 
 ###
 
 ### Test cases Q1
-GET {{base}}/questions/{{q1Id}}/test-cases
+GET {{api}}/questions/{{q1Id}}/test-cases
 
 ###
 
 ### Test cases Q2
-GET {{base}}/questions/{{q2Id}}/test-cases
+GET {{api}}/questions/{{q2Id}}/test-cases
 
 ###
 
 ### Xóa test cases Q1 (để tạo lại)
-DELETE {{base}}/questions/{{q1Id}}/test-cases
+DELETE {{api}}/questions/{{q1Id}}/test-cases
 
 ###
 
 ### Xóa test cases Q2 (để tạo lại)
-DELETE {{base}}/questions/{{q2Id}}/test-cases
+DELETE {{api}}/questions/{{q2Id}}/test-cases
 
 ###
 
 ### Danh sách submissions của assignment
-GET {{base}}/assignments/{{assignmentId}}/submissions
+GET {{api}}/assignments/{{assignmentId}}/submissions
 
 ###
 
 ### Danh sách submissions (filter theo studentCode)
-GET {{base}}/assignments/{{assignmentId}}/submissions?studentCode=SE
+GET {{api}}/assignments/{{assignmentId}}/submissions?studentCode=SE
 
 ###
 
 ### Submission detail
-GET {{base}}/submissions/{{submissionId}}
+GET {{api}}/submissions/{{submissionId}}
 
 ###
 
 ### Grading jobs của submission
-GET {{base}}/submissions/{{submissionId}}/grading-jobs
+GET {{api}}/submissions/{{submissionId}}/grading-jobs
 
 ###
 
-### Question result detail
-GET {{base}}/question-results/{{q1ResultId}}
+### Question result detail (Q1)
+GET {{api}}/question-results/{{q1ResultId}}
+
+###
+
+### Question result detail (Q2)
+GET {{api}}/question-results/{{q2ResultId}}

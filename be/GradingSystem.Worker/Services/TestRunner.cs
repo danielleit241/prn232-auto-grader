@@ -40,6 +40,12 @@ public class TestRunner(ILogger<TestRunner> logger)
             else
                 details = await RunHttpCasesAsync(testCases, app.Port, client, ct);
 
+            var existing = (await uow.QuestionResults.FindAsync(
+                r => r.SubmissionId == job.SubmissionId && r.QuestionId == question.Id))
+                .FirstOrDefault();
+            if (existing != null)
+                uow.QuestionResults.Remove(existing);
+
             int totalScore = details.Sum(r => r.AwardedScore);
 
             await uow.QuestionResults.AddAsync(new QuestionResult
@@ -285,8 +291,9 @@ public class TestRunner(ILogger<TestRunner> logger)
 
             if (expect.Selector != null)
             {
-                // HtmlAgilityPack XPath: bare tag names only match direct children — prefix "//" to search anywhere.
-                var xpath = expect.Selector.StartsWith('/') ? expect.Selector : "//" + expect.Selector;
+                var xpath = expect.Selector.StartsWith('/')
+                    ? expect.Selector
+                    : "//" + expect.Selector.Trim().Replace(" ", "//");
                 var nodes = doc.DocumentNode.SelectNodes(xpath);
 
                 if (expect.SelectorMinCount != null)

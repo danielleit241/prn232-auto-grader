@@ -1,5 +1,6 @@
 using GradingSystem.Application.DTOs;
 using GradingSystem.Application.Interfaces;
+using GradingSystem.Domain.Entities;
 
 namespace GradingSystem.Application.Services;
 
@@ -20,11 +21,11 @@ public class GradingJobService(IUnitOfWork unitOfWork) : IGradingJobService
 
     private static GradingJobDto Map(GradingJob e) => new()
     {
-        Id           = e.Id,
+        Id = e.Id,
         SubmissionId = e.SubmissionId,
-        Status       = e.Status,
+        Status = e.Status,
         ErrorMessage = e.ErrorMessage,
-        StartedAt    = e.StartedAt,
-        FinishedAt   = e.FinishedAt,
+        StartedAt = e.StartedAt,
+        FinishedAt = e.FinishedAt,
     };
 }
