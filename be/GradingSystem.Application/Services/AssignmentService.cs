@@ -81,6 +81,77 @@ public class AssignmentService(IUnitOfWork unitOfWork, IConfiguration configurat
         return Map(entity);
     }
 
+    public async Task<AssignmentDto> DeleteAsync(Guid assignmentId, CancellationToken ct = default)
+    {
+        var entity = await unitOfWork.Assignments.GetByIdAsync(assignmentId)
+            ?? throw new NotFoundException($"Assignment '{assignmentId}' not found.");
+
+        // Delete storage files (database.sql)
+        if (!string.IsNullOrEmpty(entity.DatabaseSqlPath) && File.Exists(entity.DatabaseSqlPath))
+        {
+            try
+            {
+                File.Delete(entity.DatabaseSqlPath);
+                var dir = Path.GetDirectoryName(entity.DatabaseSqlPath);
+                if (dir != null && Directory.Exists(dir) && Directory.GetFiles(dir).Length == 0)
+                    Directory.Delete(dir);
+            }
+            catch { /* ignore file deletion errors */ }
+        }
+
+        // Get all questions for this assignment
+        var questions = await unitOfWork.Questions.FindAsync(q => q.AssignmentId == assignmentId);
+
+        foreach (var question in questions)
+        {
+            // Delete test cases for this question
+            var testCases = await unitOfWork.TestCases.FindAsync(t => t.QuestionId == question.Id);
+            foreach (var testCase in testCases)
+                unitOfWork.TestCases.Remove(testCase);
+
+            // Delete the question
+            unitOfWork.Questions.Remove(question);
+        }
+
+        // Get all submissions for this assignment
+        var submissions = await unitOfWork.Submissions.FindAsync(s => s.AssignmentId == assignmentId);
+
+        foreach (var submission in submissions)
+        {
+            // Delete grading jobs
+            var jobs = await unitOfWork.GradingJobs.FindAsync(j => j.SubmissionId == submission.Id);
+            foreach (var job in jobs)
+                unitOfWork.GradingJobs.Remove(job);
+
+            // Delete question results
+            var results = await unitOfWork.QuestionResults.FindAsync(r => r.SubmissionId == submission.Id);
+            foreach (var result in results)
+                unitOfWork.QuestionResults.Remove(result);
+
+            // Delete submission artifact file
+            if (!string.IsNullOrEmpty(submission.ArtifactZipPath) && File.Exists(submission.ArtifactZipPath))
+            {
+                try
+                {
+                    File.Delete(submission.ArtifactZipPath);
+                    var dir = Path.GetDirectoryName(submission.ArtifactZipPath);
+                    if (dir != null && Directory.Exists(dir) && Directory.GetFiles(dir).Length == 0)
+                        Directory.Delete(dir);
+                }
+                catch { /* ignore file deletion errors */ }
+            }
+
+            // Delete the submission
+            unitOfWork.Submissions.Remove(submission);
+        }
+
+        // Delete the assignment
+        unitOfWork.Assignments.Remove(entity);
+        await unitOfWork.SaveChangesAsync(ct);
+
+        return Map(entity);
+    }
+
     private async Task<string> SaveAssignmentFileAsync(Guid assignmentId, string targetFileName, Stream content, CancellationToken ct)
     {
         var directory = Path.Combine(_storageBasePath, "assignments", assignmentId.ToString());

@@ -63,4 +63,11 @@ public class AssignmentsController(IAssignmentService assignmentService) : BaseA
             databaseSqlStream?.Dispose();
         }
     }
+
+    [HttpDelete("assignments/{id:guid}")]
+    public async Task<IActionResult> DeleteAsync(Guid id, CancellationToken ct)
+    {
+        var deleted = await assignmentService.DeleteAsync(id, ct);
+        return Ok(deleted, "Assignment deleted.");
+    }
 }

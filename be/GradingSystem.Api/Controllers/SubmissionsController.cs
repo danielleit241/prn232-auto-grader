@@ -69,4 +69,11 @@ public class SubmissionsController(
         var note = await reviewNoteService.UpsertAsync(id, req, ct);
         return Ok(note, "Review note upserted.");
     }
+
+    [HttpDelete("submissions/{id:guid}")]
+    public async Task<IActionResult> DeleteAsync(Guid id, CancellationToken ct)
+    {
+        var deleted = await submissionService.DeleteAsync(id, ct);
+        return Ok(deleted, "Submission deleted.");
+    }
 }
