@@ -1,3 +1,4 @@
+using GradingSystem.Application.Common;
 using GradingSystem.Application.DTOs;
 using GradingSystem.Application.Exceptions;
 using GradingSystem.Application.Interfaces;
@@ -86,18 +87,7 @@ public class AssignmentService(IUnitOfWork unitOfWork, IConfiguration configurat
         var entity = await unitOfWork.Assignments.GetByIdAsync(assignmentId)
             ?? throw new NotFoundException($"Assignment '{assignmentId}' not found.");
 
-        // Delete storage files (database.sql)
-        if (!string.IsNullOrEmpty(entity.DatabaseSqlPath) && File.Exists(entity.DatabaseSqlPath))
-        {
-            try
-            {
-                File.Delete(entity.DatabaseSqlPath);
-                var dir = Path.GetDirectoryName(entity.DatabaseSqlPath);
-                if (dir != null && Directory.Exists(dir) && Directory.GetFiles(dir).Length == 0)
-                    Directory.Delete(dir);
-            }
-            catch { /* ignore file deletion errors */ }
-        }
+        FileHelper.SafeDelete(entity.DatabaseSqlPath);
 
         // Get all questions for this assignment
         var questions = await unitOfWork.Questions.FindAsync(q => q.AssignmentId == assignmentId);
@@ -128,18 +118,7 @@ public class AssignmentService(IUnitOfWork unitOfWork, IConfiguration configurat
             foreach (var result in results)
                 unitOfWork.QuestionResults.Remove(result);
 
-            // Delete submission artifact file
-            if (!string.IsNullOrEmpty(submission.ArtifactZipPath) && File.Exists(submission.ArtifactZipPath))
-            {
-                try
-                {
-                    File.Delete(submission.ArtifactZipPath);
-                    var dir = Path.GetDirectoryName(submission.ArtifactZipPath);
-                    if (dir != null && Directory.Exists(dir) && Directory.GetFiles(dir).Length == 0)
-                        Directory.Delete(dir);
-                }
-                catch { /* ignore file deletion errors */ }
-            }
+            FileHelper.SafeDelete(submission.ArtifactZipPath);
 
             // Delete the submission
             unitOfWork.Submissions.Remove(submission);

@@ -1,5 +1,5 @@
 using System.Text.Json;
-using System.Text.RegularExpressions;
+using GradingSystem.Application.Common;
 using GradingSystem.Application.Interfaces;
 using GradingSystem.Domain.Entities;
 using OfficeOpenXml;
@@ -41,12 +41,12 @@ public class ExportRunner(
         columns.Add("Notes");
 
         var rows = new List<List<object>>();
-        foreach (var sub in submissions.OrderBy(s => ParseStudentId(s.StudentCode)))
+        foreach (var sub in submissions.OrderBy(s => StudentCode.ParseId(s.StudentCode)))
         {
             var row = new List<object>
             {
                 sub.StudentCode.Length > 9 ? sub.StudentCode[..^9] : sub.StudentCode,
-                ParseStudentId(sub.StudentCode),
+                StudentCode.ParseId(sub.StudentCode),
             };
 
             int grandTotal = 0, grandMax = 0;
@@ -102,11 +102,5 @@ public class ExportRunner(
 
         logger.LogInformation("Export {JobId} saved to {Path}", job.Id, path);
         return path;
-    }
-
-    private static string ParseStudentId(string code)
-    {
-        var m = Regex.Match(code, @"[a-zA-Z]{2}\d{6}");
-        return m.Success ? m.Value : code;
     }
 }

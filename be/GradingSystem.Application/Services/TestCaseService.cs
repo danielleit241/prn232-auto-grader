@@ -28,8 +28,13 @@ public class TestCaseService(IUnitOfWork unitOfWork) : ITestCaseService
         if (requests.Count == 0)
             throw new BadRequestException("At least one test case is required.");
 
-        _ = await unitOfWork.Questions.GetByIdAsync(questionId)
+        var question = await unitOfWork.Questions.GetByIdAsync(questionId)
             ?? throw new NotFoundException($"Question '{questionId}' not found.");
+
+        var totalScore = requests.Sum(r => r.Score);
+        if (totalScore != question.MaxScore)
+            throw new BadRequestException(
+                $"Sum of test case scores ({totalScore}) must equal question MaxScore ({question.MaxScore}).");
 
         var created = new List<TestCaseDto>(requests.Count);
 
@@ -40,13 +45,17 @@ public class TestCaseService(IUnitOfWork unitOfWork) : ITestCaseService
                 throw new BadRequestException(
                     $"HttpMethod '{req.HttpMethod}' is not supported. Allowed values: {string.Join(", ", AllowedHttpMethods)}.");
 
+            if (req.Score > question.MaxScore)
+                throw new BadRequestException(
+                    $"Test case score ({req.Score}) exceeds question MaxScore ({question.MaxScore}).");
+
             var entity = new TestCase
             {
                 QuestionId  = questionId,
                 Name        = BuildName(normalizedMethod, req.UrlTemplate),
                 HttpMethod  = normalizedMethod,
                 UrlTemplate = req.UrlTemplate.Trim(),
-                InputJson   = req.InputJson?.Trim(),
+                InputJson   = SerializeInput(req.Input),
                 ExpectJson  = SerializeExpect(req),
                 Score       = req.Score,
             };
@@ -103,7 +112,7 @@ public class TestCaseService(IUnitOfWork unitOfWork) : ITestCaseService
         entity.Name        = BuildName(normalizedMethod, request.UrlTemplate);
         entity.HttpMethod  = normalizedMethod;
         entity.UrlTemplate = request.UrlTemplate.Trim();
-        entity.InputJson   = request.InputJson?.Trim();
+        entity.InputJson   = SerializeInput(request.Input);
         entity.ExpectJson  = SerializeExpect(request);
         entity.Score       = request.Score;
 
@@ -118,6 +127,11 @@ public class TestCaseService(IUnitOfWork unitOfWork) : ITestCaseService
         var generated = $"{httpMethod} {urlTemplate.Trim()}";
         return generated.Length <= 100 ? generated : generated[..100];
     }
+
+    private static string? SerializeInput(JsonElement? input) =>
+        input is { } el && el.ValueKind != JsonValueKind.Null && el.ValueKind != JsonValueKind.Undefined
+            ? el.GetRawText()
+            : null;
 
     private static string SerializeExpect(CreateTestCaseRequest req) =>
         JsonSerializer.Serialize(new
@@ -140,9 +154,14 @@ public class TestCaseService(IUnitOfWork unitOfWork) : ITestCaseService
             Name        = entity.Name,
             HttpMethod  = entity.HttpMethod,
             UrlTemplate = entity.UrlTemplate,
-            InputJson   = entity.InputJson,
             Score       = entity.Score,
         };
+
+        if (entity.InputJson != null)
+        {
+            try { dto.Input = JsonDocument.Parse(entity.InputJson).RootElement.Clone(); }
+            catch { /* ignore malformed stored JSON */ }
+        }
 
         if (string.IsNullOrWhiteSpace(entity.ExpectJson)) return dto;
 

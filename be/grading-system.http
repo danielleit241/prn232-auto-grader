@@ -126,7 +126,7 @@ Content-Type: application/json
   {
     "httpMethod": "GET",
     "urlTemplate": "/api/student-performance",
-    "inputJson": "{\"page\": 1, \"pageSize\": 2}",
+    "input": { "page": 1, "pageSize": 2 },
     "expectedStatus": 200,
     "fields": ["data", "totalPages", "current", "pageSize"],
     "score": 2
@@ -134,7 +134,7 @@ Content-Type: application/json
   {
     "httpMethod": "GET",
     "urlTemplate": "/api/students",
-    "inputJson": "{\"name\": \"nguyen\"}",
+    "input": { "name": "nguyen" },
     "expectedStatus": 200,
     "isArray": true,
     "score": 1

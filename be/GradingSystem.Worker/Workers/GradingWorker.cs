@@ -5,7 +5,7 @@ using GradingSystem.Worker.Options;
 using GradingSystem.Worker.Services;
 using Microsoft.Extensions.Options;
 
-namespace GradingSystem.Worker;
+namespace GradingSystem.Worker.Workers;
 
 public class GradingWorker(
     IServiceScopeFactory scopeFactory,
@@ -90,22 +90,18 @@ public class GradingWorker(
             job.ErrorMessage = ex.Message;
             submission.Status = SubmissionStatus.Error;
 
-            // Create QuestionResult with score=0 for each question when grading fails
             foreach (var question in questions)
             {
-                // Only create if it doesn't already exist
-                var existing = (await uow.QuestionResults.FindAsync(r => r.SubmissionId == submission.Id && r.QuestionId == question.Id)).FirstOrDefault();
+                var existing = (await uow.QuestionResults.FindAsync(
+                    r => r.SubmissionId == submission.Id && r.QuestionId == question.Id)).FirstOrDefault();
                 if (existing == null)
-                {
                     await uow.QuestionResults.AddAsync(new QuestionResult
                     {
                         SubmissionId = submission.Id,
-                        QuestionId = question.Id,
-                        Score = 0,
-                        MaxScore = question.MaxScore,
-                        Detail = null,
+                        QuestionId   = question.Id,
+                        Score        = 0,
+                        MaxScore     = question.MaxScore,
                     });
-                }
             }
         }
         finally
@@ -142,7 +138,7 @@ public class GradingWorker(
         try
         {
             var path = await exportRunner.GenerateAsync(exportJob, uow, ct);
-            exportJob.Status = ExportStatus.Done;
+            exportJob.Status   = ExportStatus.Done;
             exportJob.FilePath = path;
 
             logger.LogInformation("Export job {JobId} completed: {Path}", exportJob.Id, path);
@@ -150,7 +146,7 @@ public class GradingWorker(
         catch (Exception ex)
         {
             logger.LogError(ex, "Export job {JobId} failed", exportJob.Id);
-            exportJob.Status = ExportStatus.Failed;
+            exportJob.Status       = ExportStatus.Failed;
             exportJob.ErrorMessage = ex.Message;
         }
 

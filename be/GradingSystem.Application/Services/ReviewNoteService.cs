@@ -46,5 +46,6 @@ public class ReviewNoteService(IUnitOfWork uow) : IReviewNoteService
         SubmissionId = e.SubmissionId,
         Content      = e.Content,
         ReviewedBy   = e.ReviewedBy,
+        CreatedAt    = e.CreatedAt,
     };
 }

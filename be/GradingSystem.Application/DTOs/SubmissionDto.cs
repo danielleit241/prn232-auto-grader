@@ -21,11 +21,9 @@ public class UploadSubmissionRequest
 {
     [Required]
     public Guid AssignmentId { get; set; }
-
     [Required]
     [MaxLength(20)]
     public string StudentCode { get; set; } = string.Empty;
-
     [Required]
     public (string FileName, Stream Content)? File { get; set; }
 }
