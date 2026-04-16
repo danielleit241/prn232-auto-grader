@@ -169,8 +169,13 @@ public partial class ArtifactRunner(
             if (File.Exists(dll)) return dll;
         }
 
-        return Directory.GetFiles(dir, "*.dll", SearchOption.AllDirectories)
-            .First(f => !f.Contains(".Views.") && !f.EndsWith(".runtimeconfig.dll"));
+        var candidateDll = Directory.GetFiles(dir, "*.dll", SearchOption.AllDirectories)
+            .FirstOrDefault(f => !f.Contains(".Views.") && !f.EndsWith(".runtimeconfig.dll"));
+        
+        if (candidateDll == null)
+            throw new InvalidOperationException($"No suitable DLL found in {dir}");
+        
+        return candidateDll;
     }
 
     private Process StartDotnet(string dll, int port, Dictionary<string, string>? env = null)

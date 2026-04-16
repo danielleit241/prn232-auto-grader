@@ -384,3 +384,91 @@ NUL
 # Local sample and given solution folders
 demau/
 PE_PRN232_GivenSolution/
+
+# ==========================================
+# Project-Specific Ignores
+# ==========================================
+
+# Environment & Configuration
+.env
+.env.local
+.env.*.local
+appsettings.Production.json
+appsettings.Development.json.local
+
+# Database & Storage
+storage/
+storage_data/
+postgres_data/
+sqlserver_data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Backend build outputs
+be/**/bin/
+be/**/obj/
+be/**/.vs/
+be/**/.vscode/
+be/**/Properties/launchSettings.json
+be/**/*.csproj.user
+
+# Frontend build outputs
+fe/**/node_modules/
+fe/**/.next/
+fe/**/out/
+fe/**/.cache/
+fe/**/.env.local
+fe/**/.env.*.local
+
+# IDE & Editor
+.vscode/settings.json
+.vs/
+.idea/
+*.swp
+*.swo
+*~
+*.sublime-project
+*.sublime-workspace
+
+# OS specific
+.DS_Store
+Thumbs.db
+.directory
+
+# Docker
+docker-compose.override.yml
+.docker/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak
+
+# Test artifacts
+test-results/
+coverage/
+.nyc_output/
+
+# Build artifacts
+dist/
+build/
+.turbo/
+
+# User-specific local test scripts (keep .ps1.example as reference)
+test-*.ps1
+!test-setup.ps1.example
+
+# Package manager locks (optional - uncomment if you want to ignore)
+# package-lock.json
+# pnpm-lock.yaml
+# yarn.lock

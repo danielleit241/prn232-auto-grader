@@ -79,6 +79,40 @@ public class TestCaseService(IUnitOfWork unitOfWork) : ITestCaseService
         return existing.Count;
     }
 
+    public async Task<TestCaseDto> DeleteByIdAsync(Guid testCaseId, CancellationToken ct = default)
+    {
+        var entity = await unitOfWork.TestCases.GetByIdAsync(testCaseId)
+            ?? throw new NotFoundException($"Test case '{testCaseId}' not found.");
+
+        unitOfWork.TestCases.Remove(entity);
+        await unitOfWork.SaveChangesAsync(ct);
+
+        return Map(entity);
+    }
+
+    public async Task<TestCaseDto> UpdateAsync(Guid testCaseId, CreateTestCaseRequest request, CancellationToken ct = default)
+    {
+        var entity = await unitOfWork.TestCases.GetByIdAsync(testCaseId)
+            ?? throw new NotFoundException($"Test case '{testCaseId}' not found.");
+
+        var normalizedMethod = request.HttpMethod.Trim().ToUpperInvariant();
+        if (!AllowedHttpMethods.Contains(normalizedMethod))
+            throw new BadRequestException(
+                $"HttpMethod '{request.HttpMethod}' is not supported. Allowed values: {string.Join(", ", AllowedHttpMethods)}.");
+
+        entity.Name        = BuildName(normalizedMethod, request.UrlTemplate);
+        entity.HttpMethod  = normalizedMethod;
+        entity.UrlTemplate = request.UrlTemplate.Trim();
+        entity.InputJson   = request.InputJson?.Trim();
+        entity.ExpectJson  = SerializeExpect(request);
+        entity.Score       = request.Score;
+
+        unitOfWork.TestCases.Update(entity);
+        await unitOfWork.SaveChangesAsync(ct);
+
+        return Map(entity);
+    }
+
     private static string BuildName(string httpMethod, string urlTemplate)
     {
         var generated = $"{httpMethod} {urlTemplate.Trim()}";

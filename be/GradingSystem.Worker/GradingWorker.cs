@@ -89,6 +89,24 @@ public class GradingWorker(
             job.Status = JobStatus.Failed;
             job.ErrorMessage = ex.Message;
             submission.Status = SubmissionStatus.Error;
+
+            // Create QuestionResult with score=0 for each question when grading fails
+            foreach (var question in questions)
+            {
+                // Only create if it doesn't already exist
+                var existing = (await uow.QuestionResults.FindAsync(r => r.SubmissionId == submission.Id && r.QuestionId == question.Id)).FirstOrDefault();
+                if (existing == null)
+                {
+                    await uow.QuestionResults.AddAsync(new QuestionResult
+                    {
+                        SubmissionId = submission.Id,
+                        QuestionId = question.Id,
+                        Score = 0,
+                        MaxScore = question.MaxScore,
+                        Detail = null,
+                    });
+                }
+            }
         }
         finally
         {

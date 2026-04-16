@@ -119,6 +119,41 @@ public class SubmissionService(IUnitOfWork uow, IConfiguration config) : ISubmis
         return MapJob(job);
     }
 
+    public async Task<SubmissionDto> DeleteAsync(Guid submissionId, CancellationToken ct = default)
+    {
+        var submission = await uow.Submissions.GetByIdAsync(submissionId)
+            ?? throw new NotFoundException($"Submission '{submissionId}' not found.");
+
+        // Delete the artifact file if it exists
+        if (!string.IsNullOrEmpty(submission.ArtifactZipPath) && File.Exists(submission.ArtifactZipPath))
+        {
+            try
+            {
+                File.Delete(submission.ArtifactZipPath);
+                var dir = Path.GetDirectoryName(submission.ArtifactZipPath);
+                if (dir != null && Directory.Exists(dir) && Directory.GetFiles(dir).Length == 0)
+                    Directory.Delete(dir);
+            }
+            catch { /* ignore file deletion errors */ }
+        }
+
+        // Delete related grading jobs
+        var jobs = await uow.GradingJobs.FindAsync(j => j.SubmissionId == submissionId);
+        foreach (var job in jobs)
+            uow.GradingJobs.Remove(job);
+
+        // Delete related question results
+        var results = await uow.QuestionResults.FindAsync(r => r.SubmissionId == submissionId);
+        foreach (var result in results)
+            uow.QuestionResults.Remove(result);
+
+        // Delete the submission
+        uow.Submissions.Remove(submission);
+        await uow.SaveChangesAsync(ct);
+
+        return Map(submission);
+    }
+
     private static SubmissionDto Map(Submission e) => MapWithScore(e, null);
 
     private static SubmissionDto MapWithScore(Submission e, IList<QuestionResult>? results) => new()
