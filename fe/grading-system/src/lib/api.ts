@@ -205,6 +205,52 @@ class ApiClient {
     return this.delete<Submission>(`/submissions/${submissionId}`);
   }
 
+  async addSubmissionNotes(
+    submissionId: string,
+    content: string,
+    reviewedBy: string
+  ): Promise<ApiResponse<Submission>> {
+    return this.put<Submission>(`/submissions/${submissionId}/notes`, {
+      content,
+      reviewedBy,
+    });
+  }
+
+  // ====== Resources Endpoints ======
+  async uploadAssignmentResources(
+    assignmentId: string,
+    formData: FormData
+  ): Promise<ApiResponse<any>> {
+    const url = `${this.baseUrl}/assignments/${assignmentId}/resources`;
+    try {
+      const response = await fetch(url, {
+        method: "PUT",
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        return {
+          status: false,
+          message: data.message || "Upload failed",
+          errors: data.errors,
+        };
+      }
+
+      return {
+        status: true,
+        message: data.message || "Success",
+        data: data.data,
+      };
+    } catch (error) {
+      return {
+        status: false,
+        message: error instanceof Error ? error.message : "Upload failed",
+      };
+    }
+  }
+
   // ====== Grading Endpoints ======
   async triggerGrading(submissionId: string): Promise<ApiResponse<GradingJob>> {
     return this.post<GradingJob>(`/submissions/${submissionId}/grade`);
@@ -226,7 +272,28 @@ class ApiClient {
   async getSubmissionResults(
     submissionId: string
   ): Promise<ApiResponse<QuestionResult[]>> {
-    return this.get<QuestionResult[]>(`/submissions/${submissionId}/results`);
+    return this.get<QuestionResult[]>(`/submissions/${submissionId}/question-results`);
+  }
+
+  async getQuestionResultById(resultId: string): Promise<ApiResponse<QuestionResult>> {
+    return this.get<QuestionResult>(`/question-results/${resultId}`);
+  }
+
+  async adjustQuestionResult(
+    resultId: string,
+    adjustedScore: number,
+    adjustReason: string,
+    adjustedBy: string
+  ): Promise<ApiResponse<QuestionResult>> {
+    return this.put<QuestionResult>(`/question-results/${resultId}/adjust`, {
+      adjustedScore,
+      adjustReason,
+      adjustedBy,
+    });
+  }
+
+  async deleteQuestionResultAdjustment(resultId: string): Promise<ApiResponse<QuestionResult>> {
+    return this.delete<QuestionResult>(`/question-results/${resultId}/adjust`);
   }
 
   // ====== Export Endpoints ======

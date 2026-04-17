@@ -320,6 +320,12 @@ export default function QuestionDetailPage() {
                       <p className="text-sm text-slate-400">Score: {tc.score}</p>
                     </div>
                     <div className="flex gap-2 ml-4">
+                      <Link
+                        href={`/assignments/${assignmentId}/questions/${questionId}/testcases/${tc.id}`}
+                        className="bg-purple-600 hover:bg-purple-700 px-3 py-1 rounded text-sm transition"
+                      >
+                        View
+                      </Link>
                       <button
                         onClick={() => handleEditTestCase(tc)}
                         disabled={submitting}
