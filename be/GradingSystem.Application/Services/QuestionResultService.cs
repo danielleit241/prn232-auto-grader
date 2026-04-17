@@ -1,4 +1,4 @@
-using System.Text.RegularExpressions;
+using GradingSystem.Application.Common;
 using GradingSystem.Application.DTOs;
 using GradingSystem.Application.Exceptions;
 using GradingSystem.Application.Interfaces;
@@ -7,7 +7,25 @@ namespace GradingSystem.Application.Services;
 
 public class QuestionResultService(IUnitOfWork unitOfWork) : IQuestionResultService
 {
-    private static readonly Regex StudentIdRegex = new(@"[a-zA-Z]{2}\d{6}", RegexOptions.Compiled);
+    public async Task<QuestionResultDto?> GetByIdAsync(Guid id, CancellationToken ct = default)
+    {
+        var entity = await unitOfWork.QuestionResults.GetByIdAsync(id);
+        return entity is null ? null : await BuildDtoAsync(entity);
+    }
+
+    public async Task<IReadOnlyList<QuestionResultDto>> GetBySubmissionIdAsync(
+        Guid submissionId, CancellationToken ct = default)
+    {
+        var entities = (await unitOfWork.QuestionResults.FindAsync(r => r.SubmissionId == submissionId))
+                       .OrderBy(r => r.CreatedAt).ToList();
+        if (entities.Count == 0) return [];
+
+        var submission = await unitOfWork.Submissions.GetByIdAsync(submissionId);
+        var studentCode = submission?.StudentCode ?? string.Empty;
+        var studentId   = StudentCode.ParseId(studentCode);
+
+        return entities.Select(e => MapDto(e, studentCode, studentId)).ToList();
+    }
 
     public async Task<QuestionResultDto> AdjustAsync(Guid id, AdjustScoreRequest req, CancellationToken ct = default)
     {
@@ -56,28 +74,23 @@ public class QuestionResultService(IUnitOfWork unitOfWork) : IQuestionResultServ
         var submission = await unitOfWork.Submissions.GetByIdAsync(entity.SubmissionId)
             ?? throw new NotFoundException($"Submission '{entity.SubmissionId}' not found.");
 
-        var studentId = ParseStudentId(submission.StudentCode);
-        return new QuestionResultDto
-        {
-            Id = entity.Id,
-            SubmissionId = entity.SubmissionId,
-            QuestionId = entity.QuestionId,
-            StudentCode = submission.StudentCode,
-            StudentId = studentId,
-            Score = entity.Score,
-            MaxScore = entity.MaxScore,
-            FinalScore = entity.FinalScore,
-            Detail = entity.Detail,
-            AdjustedScore = entity.AdjustedScore,
-            AdjustReason = entity.AdjustReason,
-            AdjustedBy = entity.AdjustedBy,
-            AdjustedAt = entity.AdjustedAt
-        };
+        return MapDto(entity, submission.StudentCode, StudentCode.ParseId(submission.StudentCode));
     }
 
-    private static string ParseStudentId(string code)
+    private static QuestionResultDto MapDto(Domain.Entities.QuestionResult e, string studentCode, string studentId) => new()
     {
-        var match = StudentIdRegex.Match(code);
-        return match.Success ? match.Value : code;
-    }
+        Id            = e.Id,
+        SubmissionId  = e.SubmissionId,
+        QuestionId    = e.QuestionId,
+        StudentCode   = studentCode,
+        StudentId     = studentId,
+        Score         = e.Score,
+        MaxScore      = e.MaxScore,
+        FinalScore    = e.FinalScore,
+        Detail        = e.Detail,
+        AdjustedScore = e.AdjustedScore,
+        AdjustReason  = e.AdjustReason,
+        AdjustedBy    = e.AdjustedBy,
+        AdjustedAt    = e.AdjustedAt,
+    };
 }

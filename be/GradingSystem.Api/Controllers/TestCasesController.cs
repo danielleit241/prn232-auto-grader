@@ -35,4 +35,21 @@ public class TestCasesController(ITestCaseService testCaseService) : BaseApiCont
         var count = await testCaseService.DeleteByQuestionIdAsync(questionId, ct);
         return Ok(ApiResponse.Success(new { deleted = count }, $"Deleted {count} test case(s)."));
     }
+
+    [HttpDelete("test-cases/{testCaseId:guid}")]
+    public async Task<IActionResult> DeleteByIdAsync(Guid testCaseId, CancellationToken ct)
+    {
+        var deleted = await testCaseService.DeleteByIdAsync(testCaseId, ct);
+        return Ok(deleted, "Test case deleted.");
+    }
+
+    [HttpPut("test-cases/{testCaseId:guid}")]
+    public async Task<IActionResult> UpdateAsync(
+        Guid testCaseId,
+        [FromBody] CreateTestCaseRequest req,
+        CancellationToken ct)
+    {
+        var updated = await testCaseService.UpdateAsync(testCaseId, req, ct);
+        return Ok(updated, "Test case updated.");
+    }
 }

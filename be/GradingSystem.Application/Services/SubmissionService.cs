@@ -1,4 +1,4 @@
-using System.Text.RegularExpressions;
+using GradingSystem.Application.Common;
 using GradingSystem.Application.DTOs;
 using GradingSystem.Application.Exceptions;
 using GradingSystem.Application.Interfaces;
@@ -9,7 +9,6 @@ namespace GradingSystem.Application.Services;
 
 public class SubmissionService(IUnitOfWork uow, IConfiguration config) : ISubmissionService
 {
-    private static readonly Regex StudentIdRegex = new(@"[a-zA-Z]{2}\d{6}", RegexOptions.Compiled);
     private readonly string _basePath = config["Storage:BasePath"] ?? "/storage";
 
     public async Task<SubmissionDto> UploadAsync(UploadSubmissionRequest req, CancellationToken ct = default)
@@ -119,6 +118,30 @@ public class SubmissionService(IUnitOfWork uow, IConfiguration config) : ISubmis
         return MapJob(job);
     }
 
+    public async Task<SubmissionDto> DeleteAsync(Guid submissionId, CancellationToken ct = default)
+    {
+        var submission = await uow.Submissions.GetByIdAsync(submissionId)
+            ?? throw new NotFoundException($"Submission '{submissionId}' not found.");
+
+        FileHelper.SafeDelete(submission.ArtifactZipPath);
+
+        // Delete related grading jobs
+        var jobs = await uow.GradingJobs.FindAsync(j => j.SubmissionId == submissionId);
+        foreach (var job in jobs)
+            uow.GradingJobs.Remove(job);
+
+        // Delete related question results
+        var results = await uow.QuestionResults.FindAsync(r => r.SubmissionId == submissionId);
+        foreach (var result in results)
+            uow.QuestionResults.Remove(result);
+
+        // Delete the submission
+        uow.Submissions.Remove(submission);
+        await uow.SaveChangesAsync(ct);
+
+        return Map(submission);
+    }
+
     private static SubmissionDto Map(Submission e) => MapWithScore(e, null);
 
     private static SubmissionDto MapWithScore(Submission e, IList<QuestionResult>? results) => new()
@@ -149,7 +172,7 @@ public class SubmissionService(IUnitOfWork uow, IConfiguration config) : ISubmis
         SubmissionId  = r.SubmissionId,
         QuestionId    = r.QuestionId,
         StudentCode   = studentCode,
-        StudentId     = ParseStudentId(studentCode),
+        StudentId     = StudentCode.ParseId(studentCode),
         Score         = r.Score,
         MaxScore      = r.MaxScore,
         FinalScore    = r.FinalScore,
@@ -160,9 +183,4 @@ public class SubmissionService(IUnitOfWork uow, IConfiguration config) : ISubmis
         AdjustedAt    = r.AdjustedAt,
     };
 
-    private static string ParseStudentId(string code)
-    {
-        var m = StudentIdRegex.Match(code);
-        return m.Success ? m.Value : code;
-    }
 }

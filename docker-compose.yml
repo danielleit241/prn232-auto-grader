@@ -1,65 +1,65 @@
 services:
 
-  # api:
-  #   image: ${DOCKER_REPO}/grading-system-api:${IMAGE_TAG:-latest}
-  #   build:
-  #     context: ./be
-  #     dockerfile: GradingSystem.Api/Dockerfile
-  #   depends_on:
-  #     postgres:
-  #       condition: service_healthy
-  #   environment:
-  #     ASPNETCORE_ENVIRONMENT: Production
-  #     ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
-  #     Storage__BasePath: /storage
-  #   ports:
-  #     - "5049:8080"
-  #   volumes:
-  #     - storage_data:/storage
-  #   networks:
-  #     - grading_net
-  #   restart: unless-stopped
+  api:
+    image: ${DOCKER_REPO}/grading-system-api:${IMAGE_TAG:-latest}
+    build:
+      context: ./be
+      dockerfile: GradingSystem.Api/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      Storage__BasePath: /storage
+    ports:
+      - "5049:8080"
+    volumes:
+      - storage_data:/storage
+    networks:
+      - grading_net
+    restart: unless-stopped
 
-  # worker:
-  #   image: ${DOCKER_REPO}/grading-system-worker:${IMAGE_TAG:-latest}
-  #   build:
-  #     context: ./be
-  #     dockerfile: GradingSystem.Worker/Dockerfile
-  #   depends_on:
-  #     postgres:
-  #       condition: service_healthy
-  #     sqlserver:
-  #       condition: service_healthy
-  #   environment:
-  #     ASPNETCORE_ENVIRONMENT: Production
-  #     ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
-  #     ConnectionStrings__SqlServer: "Server=sqlserver,1433;User Id=sa;Password=${SA_PASSWORD};TrustServerCertificate=true"
-  #     Storage__BasePath: /storage
-  #     Worker__PollIntervalSeconds: 5
-  #     Worker__ArtifactHealthCheckTimeoutSeconds: 30
-  #     Worker__ArtifactPortRangeStart: 7000
-  #     Worker__ArtifactPortRangeEnd: 7999
-  #   volumes:
-  #     - storage_data:/storage
-  #   networks:
-  #     - grading_net
-  #   restart: unless-stopped
+  worker:
+    image: ${DOCKER_REPO}/grading-system-worker:${IMAGE_TAG:-latest}
+    build:
+      context: ./be
+      dockerfile: GradingSystem.Worker/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      sqlserver:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      ConnectionStrings__SqlServer: "Server=sqlserver,1433;User Id=sa;Password=${SA_PASSWORD};TrustServerCertificate=true"
+      Storage__BasePath: /storage
+      Worker__PollIntervalSeconds: 5
+      Worker__ArtifactHealthCheckTimeoutSeconds: 30
+      Worker__ArtifactPortRangeStart: 7000
+      Worker__ArtifactPortRangeEnd: 7999
+    volumes:
+      - storage_data:/storage
+    networks:
+      - grading_net
+    restart: unless-stopped
 
-  # fe:
-  #   image: ${DOCKER_REPO}/grading-system-fe:${IMAGE_TAG:-latest}
-  #   build:
-  #     context: ./fe/grading-system
-  #     dockerfile: Dockerfile
-  #     args:
-  #       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5049/api}
-  #       NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
-  #   depends_on:
-  #     - api
-  #   ports:
-  #     - "3000:3000"
-  #   networks:
-  #     - grading_net
-  #   restart: unless-stopped
+  fe:
+    image: ${DOCKER_REPO}/grading-system-fe:${IMAGE_TAG:-latest}
+    build:
+      context: ./fe/grading-system
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5049/api}
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+    depends_on:
+      - api
+    ports:
+      - "3000:3000"
+    networks:
+      - grading_net
+    restart: unless-stopped
 
   postgres:
     image: postgres:16-alpine

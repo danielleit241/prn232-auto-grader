@@ -12,4 +12,6 @@ public interface IAssignmentService
         Guid id,
         UpsertAssignmentResourcesRequest request,
         CancellationToken ct = default);
+
+    Task<AssignmentDto> DeleteAsync(Guid assignmentId, CancellationToken ct = default);
 }

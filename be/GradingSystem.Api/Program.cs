@@ -8,6 +8,12 @@ using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
+if (string.IsNullOrWhiteSpace(builder.Configuration["Storage:BasePath"]))
+{
+    var solutionRoot = Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, ".."));
+    builder.Configuration["Storage:BasePath"] = Path.Combine(solutionRoot, "storage");
+}
+
 builder.Services.AddInfrastructure(builder.Configuration);
 
 builder.Services.AddControllers();

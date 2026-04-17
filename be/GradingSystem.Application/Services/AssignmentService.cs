@@ -1,3 +1,4 @@
+using GradingSystem.Application.Common;
 using GradingSystem.Application.DTOs;
 using GradingSystem.Application.Exceptions;
 using GradingSystem.Application.Interfaces;
@@ -76,6 +77,55 @@ public class AssignmentService(IUnitOfWork unitOfWork, IConfiguration configurat
         }
 
         unitOfWork.Assignments.Update(entity);
+        await unitOfWork.SaveChangesAsync(ct);
+
+        return Map(entity);
+    }
+
+    public async Task<AssignmentDto> DeleteAsync(Guid assignmentId, CancellationToken ct = default)
+    {
+        var entity = await unitOfWork.Assignments.GetByIdAsync(assignmentId)
+            ?? throw new NotFoundException($"Assignment '{assignmentId}' not found.");
+
+        FileHelper.SafeDelete(entity.DatabaseSqlPath);
+
+        // Get all questions for this assignment
+        var questions = await unitOfWork.Questions.FindAsync(q => q.AssignmentId == assignmentId);
+
+        foreach (var question in questions)
+        {
+            // Delete test cases for this question
+            var testCases = await unitOfWork.TestCases.FindAsync(t => t.QuestionId == question.Id);
+            foreach (var testCase in testCases)
+                unitOfWork.TestCases.Remove(testCase);
+
+            // Delete the question
+            unitOfWork.Questions.Remove(question);
+        }
+
+        // Get all submissions for this assignment
+        var submissions = await unitOfWork.Submissions.FindAsync(s => s.AssignmentId == assignmentId);
+
+        foreach (var submission in submissions)
+        {
+            // Delete grading jobs
+            var jobs = await unitOfWork.GradingJobs.FindAsync(j => j.SubmissionId == submission.Id);
+            foreach (var job in jobs)
+                unitOfWork.GradingJobs.Remove(job);
+
+            // Delete question results
+            var results = await unitOfWork.QuestionResults.FindAsync(r => r.SubmissionId == submission.Id);
+            foreach (var result in results)
+                unitOfWork.QuestionResults.Remove(result);
+
+            FileHelper.SafeDelete(submission.ArtifactZipPath);
+
+            // Delete the submission
+            unitOfWork.Submissions.Remove(submission);
+        }
+
+        // Delete the assignment
+        unitOfWork.Assignments.Remove(entity);
         await unitOfWork.SaveChangesAsync(ct);
 
         return Map(entity);

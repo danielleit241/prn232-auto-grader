@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using GradingSystem.Application.Common;
 using GradingSystem.Application.Interfaces;
 using GradingSystem.Domain.Entities;
 using HtmlAgilityPack;
@@ -16,7 +17,7 @@ public class TestRunner(ILogger<TestRunner> logger)
 
         var handler = new HttpClientHandler
         {
-            CookieContainer   = new System.Net.CookieContainer(),
+            CookieContainer = new System.Net.CookieContainer(),
             AllowAutoRedirect = false,
         };
         using var client = new HttpClient(handler);
@@ -35,19 +36,25 @@ public class TestRunner(ILogger<TestRunner> logger)
             List<TestCaseResult> details;
 
             if (question.Type == QuestionType.Api)
-                details = await RunSwaggerCasesAsync(testCases, app.Port, client, ct);
+                details = await RunApiCasesAsync(testCases, app.Port, client, ct);
             else
                 details = await RunHttpCasesAsync(testCases, app.Port, client, ct);
+
+            var existing = (await uow.QuestionResults.FindAsync(
+                r => r.SubmissionId == job.SubmissionId && r.QuestionId == question.Id))
+                .FirstOrDefault();
+            if (existing != null)
+                uow.QuestionResults.Remove(existing);
 
             int totalScore = details.Sum(r => r.AwardedScore);
 
             await uow.QuestionResults.AddAsync(new QuestionResult
             {
                 SubmissionId = job.SubmissionId,
-                QuestionId   = question.Id,
-                Score        = totalScore,
-                MaxScore     = question.MaxScore,
-                Detail       = JsonSerializer.Serialize(details),
+                QuestionId = question.Id,
+                Score = totalScore,
+                MaxScore = question.MaxScore,
+                Detail = JsonSerializer.Serialize(details),
             });
 
             logger.LogInformation("Question {QuestionId}: {Score}/{Max}", question.Id, totalScore, question.MaxScore);
@@ -56,12 +63,12 @@ public class TestRunner(ILogger<TestRunner> logger)
         await uow.SaveChangesAsync(ct);
     }
 
-    private async Task<List<TestCaseResult>> RunSwaggerCasesAsync(
+    private async Task<List<TestCaseResult>> RunApiCasesAsync(
         List<TestCase> testCases, int port, HttpClient client, CancellationToken ct)
     {
         var swaggerUrl = $"http://localhost:{port}/swagger/v1/swagger.json";
         JsonDocument? swaggerDoc = null;
-        string? fetchError    = null;
+        string? fetchError = null;
 
         try
         {
@@ -81,10 +88,23 @@ public class TestRunner(ILogger<TestRunner> logger)
         logger.LogInformation("Swagger fetch {Url}: {Result}", swaggerUrl,
             swaggerDoc != null ? "OK" : fetchError);
 
-        return testCases.Select(tc =>
-            swaggerDoc != null
-                ? EvaluateSwaggerCase(tc, swaggerDoc, swaggerUrl)
-                : FailResult(tc, swaggerUrl, fetchError!)).ToList();
+        var results = new List<TestCaseResult>(testCases.Count);
+        foreach (var tc in testCases)
+        {
+            var expect = JsonSerializer.Deserialize<ExpectJson>(tc.ExpectJson,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+
+            bool isHttpCase = expect.Status != null || tc.InputJson != null;
+
+            if (isHttpCase)
+                results.Add(await RunHttpTestCaseAsync(tc, port, client, ct));
+            else if (swaggerDoc != null)
+                results.Add(EvaluateSwaggerCase(tc, swaggerDoc, swaggerUrl));
+            else
+                results.Add(FailResult(tc, swaggerUrl, fetchError!));
+        }
+
+        return results;
     }
 
     private static TestCaseResult EvaluateSwaggerCase(TestCase tc, JsonDocument swagger, string swaggerUrl)
@@ -113,19 +133,15 @@ public class TestRunner(ILogger<TestRunner> logger)
 
         return new TestCaseResult
         {
-            TestCaseId   = tc.Id,
-            Pass         = true,
+            TestCaseId = tc.Id,
+            Pass = true,
             AwardedScore = tc.Score,
-            HttpMethod   = tc.HttpMethod,
-            Url          = $"{swaggerUrl} — {tc.HttpMethod} {tc.UrlTemplate}",
+            HttpMethod = tc.HttpMethod,
+            Url = $"{swaggerUrl} — {tc.HttpMethod} {tc.UrlTemplate}",
             ActualStatus = 200,
         };
     }
 
-    /// <summary>
-    /// Walks the 200-response schema of an operation and verifies all <paramref name="fields"/> exist
-    /// as properties. Returns an error string if any are missing, null if OK or schema can't be resolved.
-    /// </summary>
     private static string? CheckResponseSchema(JsonElement root, JsonElement operation, List<string> fields)
     {
         if (!operation.TryGetProperty("responses", out var responses)) return null;
@@ -148,7 +164,6 @@ public class TestRunner(ILogger<TestRunner> logger)
 
         schema = ResolveRef(root, schema);
 
-        // Unwrap array → check items schema
         if (schema.TryGetProperty("type", out var typeEl) && typeEl.GetString() == "array"
             && schema.TryGetProperty("items", out var items))
         {
@@ -167,8 +182,7 @@ public class TestRunner(ILogger<TestRunner> logger)
     {
         if (!schema.TryGetProperty("$ref", out var refEl)) return schema;
 
-        // "#/components/schemas/ProductDto" → ["components","schemas","ProductDto"]
-        var parts   = (refEl.GetString() ?? "").TrimStart('#', '/').Split('/');
+        var parts = (refEl.GetString() ?? "").TrimStart('#', '/').Split('/');
         var current = root;
 
         foreach (var part in parts)
@@ -191,7 +205,7 @@ public class TestRunner(ILogger<TestRunner> logger)
     private static async Task<TestCaseResult> RunHttpTestCaseAsync(
         TestCase tc, int port, HttpClient client, CancellationToken ct)
     {
-        var url    = $"http://localhost:{port}{tc.UrlTemplate}";
+        var url = $"http://localhost:{port}{tc.UrlTemplate}";
         var method = new HttpMethod(tc.HttpMethod.ToUpper());
         var request = new HttpRequestMessage(method, url);
 
@@ -209,7 +223,7 @@ public class TestRunner(ILogger<TestRunner> logger)
         try
         {
             response = await client.SendAsync(request, ct);
-            body     = await response.Content.ReadAsStringAsync(ct);
+            body = await response.Content.ReadAsStringAsync(ct);
         }
         catch (Exception ex)
         {
@@ -217,9 +231,9 @@ public class TestRunner(ILogger<TestRunner> logger)
         }
 
         var actualStatus = (int)response.StatusCode;
-        var contentType  = response.Content.Headers.ContentType?.MediaType;
-        var isJson       = contentType == "application/json";
-        var isHtml       = contentType?.Contains("text/html") == true;
+        var contentType = response.Content.Headers.ContentType?.MediaType;
+        var isJson = contentType == "application/json";
+        var isHtml = contentType?.Contains("text/html") == true;
 
         var expect = JsonSerializer.Deserialize<ExpectJson>(tc.ExpectJson,
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
@@ -229,14 +243,14 @@ public class TestRunner(ILogger<TestRunner> logger)
 
         return new TestCaseResult
         {
-            TestCaseId   = tc.Id,
-            Pass         = pass,
+            TestCaseId = tc.Id,
+            Pass = pass,
             AwardedScore = pass ? tc.Score : 0,
-            HttpMethod   = tc.HttpMethod,
-            Url          = url,
+            HttpMethod = tc.HttpMethod,
+            Url = url,
             ActualStatus = actualStatus,
-            ActualBody   = body.Length > 500 ? body[..500] : body,
-            FailReason   = failReason,
+            ActualBody = body.Length > 500 ? body[..500] : body,
+            FailReason = failReason,
         };
     }
 
@@ -260,7 +274,7 @@ public class TestRunner(ILogger<TestRunner> logger)
 
             if (expect.Fields != null)
             {
-                var target  = root.ValueKind == JsonValueKind.Array ? root[0] : root;
+                var target = root.ValueKind == JsonValueKind.Array ? root[0] : root;
                 var missing = expect.Fields.Where(f => !target.TryGetProperty(f, out _)).ToList();
                 if (missing.Count > 0)
                     return $"Missing fields: {string.Join(", ", missing)}";
@@ -277,9 +291,9 @@ public class TestRunner(ILogger<TestRunner> logger)
 
             if (expect.Selector != null)
             {
-                // HtmlAgilityPack uses XPath — a bare tag name like "table" only matches
-                // direct children of the root node. Prepend "//" so it searches anywhere.
-                var xpath = expect.Selector.StartsWith('/') ? expect.Selector : "//" + expect.Selector;
+                var xpath = expect.Selector.StartsWith('/')
+                    ? expect.Selector
+                    : "//" + expect.Selector.Trim().Replace(" ", "//");
                 var nodes = doc.DocumentNode.SelectNodes(xpath);
 
                 if (expect.SelectorMinCount != null)
@@ -306,13 +320,13 @@ public class TestRunner(ILogger<TestRunner> logger)
 
     private static TestCaseResult FailResult(TestCase tc, string url, string reason) => new()
     {
-        TestCaseId   = tc.Id,
-        Pass         = false,
+        TestCaseId = tc.Id,
+        Pass = false,
         AwardedScore = 0,
-        HttpMethod   = tc.HttpMethod,
-        Url          = url,
+        HttpMethod = tc.HttpMethod,
+        Url = url,
         ActualStatus = 0,
-        FailReason   = reason,
+        FailReason = reason,
     };
 
     private static string JsonToQueryString(string inputJson)
@@ -322,27 +336,4 @@ public class TestRunner(ILogger<TestRunner> logger)
         return string.Join("&", node.Select(kv =>
             Uri.EscapeDataString(kv.Key) + "=" + Uri.EscapeDataString(kv.Value?.ToString() ?? "")));
     }
-}
-
-public class ExpectJson
-{
-    public int? Status { get; set; }
-    public bool? IsArray { get; set; }
-    public List<string>? Fields { get; set; }
-    public string? Value { get; set; }
-    public string? Selector { get; set; }
-    public string? SelectorText { get; set; }
-    public int? SelectorMinCount { get; set; }
-}
-
-public class TestCaseResult
-{
-    public Guid TestCaseId { get; set; }
-    public bool Pass { get; set; }
-    public int AwardedScore { get; set; }
-    public string HttpMethod { get; set; } = string.Empty;
-    public string Url { get; set; } = string.Empty;
-    public int ActualStatus { get; set; }
-    public string? ActualBody { get; set; }
-    public string? FailReason { get; set; }
 }
