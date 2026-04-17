@@ -5,6 +5,8 @@ namespace GradingSystem.Application.DTOs;
 
 public class CreateTestCaseRequest
 {
+    [MaxLength(200)]
+    public string? Name { get; set; }
     [Required]
     [MaxLength(10)]
     public string HttpMethod { get; set; } = string.Empty;

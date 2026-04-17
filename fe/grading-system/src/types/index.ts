@@ -90,7 +90,20 @@ export interface QuestionResult {
   adjustReason?: string;
   adjustedBy?: string;
   adjustedAt?: string;
+  passedTestCases?: number;
+  totalTestCases?: number;
   createdAt: string;
+}
+
+export interface TestCaseResult {
+  name: string;
+  httpMethod: string;
+  urlTemplate: string;
+  passed: boolean;
+  score?: number;
+  errorMessage?: string;
+  expectedOutput?: string;
+  actualOutput?: string;
 }
 
 export interface ReviewNote {

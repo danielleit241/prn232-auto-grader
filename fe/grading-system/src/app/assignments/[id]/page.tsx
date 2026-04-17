@@ -158,10 +158,31 @@ export default function AssignmentDetailPage() {
         {/* Overview Tab */}
         {activeTab === "overview" && (
           <div className="space-y-8">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-bold">Actions</h2>
-              <Link href={`/assignments/${assignmentId}/submit`} className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded transition">
-                Submit Solution
+            {/* Action Buttons */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+              <Link 
+                href={`/assignments/${assignmentId}/setup`} 
+                className="bg-purple-600 hover:bg-purple-700 px-4 py-3 rounded font-semibold transition text-center"
+              >
+                📦 Setup Resources
+              </Link>
+              <Link 
+                href={`/assignments/${assignmentId}/questions`} 
+                className="bg-blue-600 hover:bg-blue-700 px-4 py-3 rounded font-semibold transition text-center"
+              >
+                ❓ Manage Questions
+              </Link>
+              <Link 
+                href={`/assignments/${assignmentId}/submissions`} 
+                className="bg-cyan-600 hover:bg-cyan-700 px-4 py-3 rounded font-semibold transition text-center"
+              >
+                📤 Submissions
+              </Link>
+              <Link 
+                href={`/assignments/${assignmentId}/export`} 
+                className="bg-green-600 hover:bg-green-700 px-4 py-3 rounded font-semibold transition text-center"
+              >
+                📊 Export Results
               </Link>
             </div>
 
@@ -294,51 +315,70 @@ export default function AssignmentDetailPage() {
 
         {/* Submissions Tab */}
         {activeTab === "submissions" && (
-          <div className="bg-slate-800 p-6 rounded-lg border border-slate-700">
-            <h2 className="text-xl font-bold mb-4">Submissions ({submissions.length})</h2>
-            {submissions.length === 0 ? (
-              <p className="text-slate-400">No submissions yet</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-slate-700">
-                    <tr>
-                      <th className="px-4 py-2 text-left">Student Code</th>
-                      <th className="px-4 py-2 text-left">Status</th>
-                      <th className="px-4 py-2 text-left">Score</th>
-                      <th className="px-4 py-2 text-left">Submitted</th>
-                      <th className="px-4 py-2 text-left">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-700">
-                    {submissions.map((s) => (
-                      <tr key={s.id} className="hover:bg-slate-700/50">
-                        <td className="px-4 py-2">{s.studentCode}</td>
-                        <td className="px-4 py-2">
-                          <span className={`px-2 py-1 rounded text-xs font-medium ${
-                            s.status === 2 ? "bg-green-500/20 text-green-400" :
-                            s.status === 1 ? "bg-yellow-500/20 text-yellow-400" :
-                            s.status === 3 ? "bg-red-500/20 text-red-400" :
-                            "bg-slate-600 text-slate-300"
-                          }`}>
-                            {s.status === 2 ? "Done" : s.status === 1 ? "Grading" : s.status === 3 ? "Error" : "Pending"}
-                          </span>
-                        </td>
-                        <td className="px-4 py-2">
-                          {s.totalScore !== undefined && s.maxScore ? `${s.totalScore}/${s.maxScore}` : "-"}
-                        </td>
-                        <td className="px-4 py-2 text-slate-400">{new Date(s.createdAt).toLocaleDateString()}</td>
-                        <td className="px-4 py-2">
-                          <Link href={`/submissions/${s.id}`} className="text-blue-400 hover:text-blue-300">
-                            View
-                          </Link>
-                        </td>
+          <div className="space-y-4">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-bold">Submissions ({submissions.length})</h2>
+              <Link 
+                href={`/assignments/${assignmentId}/submit`} 
+                className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded transition"
+              >
+                + New Submission
+              </Link>
+            </div>
+
+            <div className="bg-slate-800 p-6 rounded-lg border border-slate-700">
+              {submissions.length === 0 ? (
+                <p className="text-slate-400">No submissions yet</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-700">
+                      <tr>
+                        <th className="px-4 py-2 text-left">Student Code</th>
+                        <th className="px-4 py-2 text-left">Status</th>
+                        <th className="px-4 py-2 text-left">Score</th>
+                        <th className="px-4 py-2 text-left">Submitted</th>
+                        <th className="px-4 py-2 text-left">Actions</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                    </thead>
+                    <tbody className="divide-y divide-slate-700">
+                      {submissions.map((s) => (
+                        <tr key={s.id} className="hover:bg-slate-700/50">
+                          <td className="px-4 py-2">{s.studentCode}</td>
+                          <td className="px-4 py-2">
+                            <span className={`px-2 py-1 rounded text-xs font-medium ${
+                              s.status === "Done" ? "bg-green-500/20 text-green-400" :
+                              s.status === "Grading" ? "bg-yellow-500/20 text-yellow-400" :
+                              s.status === "Error" ? "bg-red-500/20 text-red-400" :
+                              "bg-slate-600 text-slate-300"
+                            }`}>
+                              {s.status}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2">
+                            {s.totalScore !== undefined && s.maxScore ? `${s.totalScore}/${s.maxScore}` : "-"}
+                          </td>
+                          <td className="px-4 py-2 text-slate-400">{new Date(s.createdAt).toLocaleDateString("vi-VN")}</td>
+                          <td className="px-4 py-2 text-sm space-x-2">
+                            <Link 
+                              href={`/assignments/${assignmentId}/submissions/${s.id}/results`}
+                              className="text-blue-400 hover:text-blue-300"
+                            >
+                              Results
+                            </Link>
+                            {s.status !== "Done" && (
+                              <button className="text-yellow-400 hover:text-yellow-300">
+                                Start Grading
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>

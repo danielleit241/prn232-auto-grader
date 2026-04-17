@@ -49,8 +49,8 @@ export default function DashboardPage() {
       setStats({
         totalAssignments: allAssignments.length,
         totalSubmissions: allSubmissions.length,
-        completedSubmissions: allSubmissions.filter((s) => s.status === "Done" || s.status === 2).length,
-        pendingGrading: allSubmissions.filter((s) => s.status === "Pending" || s.status === "Grading" || s.status === 0 || s.status === 1).length,
+        completedSubmissions: allSubmissions.filter((s) => s.status === "Done").length,
+        pendingGrading: allSubmissions.filter((s) => s.status === "Pending" || s.status === "Grading").length,
       });
     } finally {
       setLoading(false);
