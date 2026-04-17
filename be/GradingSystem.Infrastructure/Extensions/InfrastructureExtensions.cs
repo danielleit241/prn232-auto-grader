@@ -15,6 +15,8 @@ public static class InfrastructureExtensions
             opt => opt.UseNpgsql(configuration.GetConnectionString("Postgres")));
 
         services.AddScoped<IUnitOfWork, UnitOfWork>();
+        services.AddScoped<IExamSessionService, ExamSessionService>();
+        services.AddScoped<IBulkUploadService, BulkUploadService>();
         services.AddScoped<IAssignmentService, AssignmentService>();
         services.AddScoped<IQuestionService, QuestionService>();
         services.AddScoped<ITestCaseService, TestCaseService>();

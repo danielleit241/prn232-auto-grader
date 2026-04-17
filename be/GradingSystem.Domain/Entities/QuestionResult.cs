@@ -5,6 +5,9 @@ public class QuestionResult : BaseEntity
     public Guid SubmissionId { get; set; }
     public Submission Submission { get; set; } = null!;
 
+    public Guid? GradingJobId { get; set; }
+    public GradingJob? GradingJob { get; set; }
+
     public Guid QuestionId { get; set; }
     public Question Question { get; set; } = null!;
 

@@ -6,6 +6,9 @@ public class QuestionApp
 {
     public required Process Process { get; set; }
     public int Port { get; set; }
+    // Set true when Q2 student appsettings has wrong GivenApiBaseUrl — score = 0, app not started
+    public bool GivenUrlInvalid { get; set; }
+    public string? GivenUrlInvalidReason { get; set; }
 }
 
 /// <summary>

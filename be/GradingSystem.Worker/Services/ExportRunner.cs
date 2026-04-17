@@ -23,11 +23,31 @@ public class ExportRunner(
             testCaseMap[q.Id] = (await uow.TestCases.FindAsync(tc => tc.QuestionId == q.Id))
                                  .OrderBy(tc => tc.CreatedAt).ToList();
 
-        var submissions = (await uow.Submissions.FindAsync(s => s.AssignmentId == job.AssignmentId)).ToList();
-        var allResults  = (await uow.QuestionResults.FindAsync(r =>
-                              submissions.Select(s => s.Id).Contains(r.SubmissionId))).ToList();
+        var submissionsQuery = await uow.Submissions.FindAsync(s => s.AssignmentId == job.AssignmentId);
+        var submissions = (job.GradingRound != null
+            ? submissionsQuery.Where(s => s.GradingRound == job.GradingRound)
+            : submissionsQuery).ToList();
+
+        var submissionIds = submissions.Select(s => s.Id).ToHashSet();
+
+        // Resolve latest Done GradingJob per submission, then load its results
+        var allGradingJobs = (await uow.GradingJobs.FindAsync(
+            j => submissionIds.Contains(j.SubmissionId) && j.Status == JobStatus.Done)).ToList();
+
+        // Latest Done job per submission
+        var latestJobBySubmission = allGradingJobs
+            .GroupBy(j => j.SubmissionId)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(j => j.FinishedAt).First().Id);
+
+        var latestJobIds = latestJobBySubmission.Values.ToHashSet();
+
+        // Results keyed to a specific job (includes missing-submission 0-score rows with null GradingJobId)
+        var allResults = (await uow.QuestionResults.FindAsync(r =>
+            submissionIds.Contains(r.SubmissionId)
+            && (r.GradingJobId == null || latestJobIds.Contains(r.GradingJobId.Value)))).ToList();
+
         var allNotes    = (await uow.ReviewNotes.FindAsync(n =>
-                              submissions.Select(s => s.Id).Contains(n.SubmissionId))).ToList();
+                              submissionIds.Contains(n.SubmissionId))).ToList();
 
         var columns = new List<string> { "Tên", "MSSV" };
         for (int qi = 0; qi < questions.Count; qi++)
@@ -50,7 +70,12 @@ public class ExportRunner(
             };
 
             int grandTotal = 0, grandMax = 0;
-            var subResults = allResults.Where(r => r.SubmissionId == sub.Id).ToList();
+            // Use latest-job results if available, fall back to job-less 0-score rows
+            latestJobBySubmission.TryGetValue(sub.Id, out var latestJobId);
+            var subResults = allResults
+                .Where(r => r.SubmissionId == sub.Id
+                    && (latestJobId == Guid.Empty ? r.GradingJobId == null : r.GradingJobId == latestJobId))
+                .ToList();
 
             for (int qi = 0; qi < questions.Count; qi++)
             {

@@ -20,7 +20,8 @@ public class SubmissionDto
 public class UploadSubmissionRequest
 {
     [Required]
-    public Guid AssignmentId { get; set; }
+    [MaxLength(50)]
+    public string AssignmentCode { get; set; } = string.Empty;
     [Required]
     [MaxLength(20)]
     public string StudentCode { get; set; } = string.Empty;

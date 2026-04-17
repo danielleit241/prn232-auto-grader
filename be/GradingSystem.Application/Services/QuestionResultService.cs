@@ -16,15 +16,35 @@ public class QuestionResultService(IUnitOfWork unitOfWork) : IQuestionResultServ
     public async Task<IReadOnlyList<QuestionResultDto>> GetBySubmissionIdAsync(
         Guid submissionId, CancellationToken ct = default)
     {
-        var entities = (await unitOfWork.QuestionResults.FindAsync(r => r.SubmissionId == submissionId))
-                       .OrderBy(r => r.CreatedAt).ToList();
-        if (entities.Count == 0) return [];
+        // Resolve latest Done grading job for this submission
+        var jobs = (await unitOfWork.GradingJobs.FindAsync(j => j.SubmissionId == submissionId))
+            .Where(j => j.Status == Domain.Entities.JobStatus.Done)
+            .OrderByDescending(j => j.FinishedAt)
+            .ToList();
+
+        IEnumerable<Domain.Entities.QuestionResult> entities;
+
+        if (jobs.Count > 0)
+        {
+            var latestJobId = jobs.First().Id;
+            entities = await unitOfWork.QuestionResults.FindAsync(
+                r => r.SubmissionId == submissionId && r.GradingJobId == latestJobId);
+        }
+        else
+        {
+            // Fall back: return any results (e.g. missing-submission 0-score rows without a job)
+            entities = await unitOfWork.QuestionResults.FindAsync(
+                r => r.SubmissionId == submissionId && r.GradingJobId == null);
+        }
+
+        var list = entities.OrderBy(r => r.CreatedAt).ToList();
+        if (list.Count == 0) return [];
 
         var submission = await unitOfWork.Submissions.GetByIdAsync(submissionId);
         var studentCode = submission?.StudentCode ?? string.Empty;
         var studentId   = StudentCode.ParseId(studentCode);
 
-        return entities.Select(e => MapDto(e, studentCode, studentId)).ToList();
+        return list.Select(e => MapDto(e, studentCode, studentId)).ToList();
     }
 
     public async Task<QuestionResultDto> AdjustAsync(Guid id, AdjustScoreRequest req, CancellationToken ct = default)

@@ -1,7 +1,9 @@
 using GradingSystem.Infrastructure.Extensions;
+using GradingSystem.Worker.Consumers;
 using GradingSystem.Worker.Options;
 using GradingSystem.Worker.Services;
 using GradingSystem.Worker.Workers;
+using MassTransit;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -24,6 +26,28 @@ builder.Services.AddHttpClient();
 builder.Services.AddSingleton<ArtifactRunner>();
 builder.Services.AddSingleton<TestRunner>();
 builder.Services.AddSingleton<ExportRunner>();
+builder.Services.AddSingleton<GradingPipeline>();
+
+var workerOpts = builder.Configuration.GetSection("Worker").Get<WorkerOptions>() ?? new WorkerOptions();
+
+builder.Services.AddMassTransit(x =>
+{
+    x.AddConsumer<GradeJobConsumer>().Endpoint(e =>
+    {
+        e.PrefetchCount = workerOpts.MaxConcurrentJobs;
+    });
+
+    x.UsingRabbitMq((ctx, cfg) =>
+    {
+        cfg.Host(builder.Configuration["RabbitMQ:Host"] ?? "rabbitmq://localhost",
+            h =>
+            {
+                h.Username(builder.Configuration["RabbitMQ:Username"] ?? "guest");
+                h.Password(builder.Configuration["RabbitMQ:Password"] ?? "guest");
+            });
+        cfg.ConfigureEndpoints(ctx);
+    });
+});
 
 builder.Services.AddHostedService<GradingWorker>();
 builder.Services.AddHostedService<StorageCleanupWorker>();

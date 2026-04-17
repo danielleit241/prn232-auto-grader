@@ -2,12 +2,14 @@ using GradingSystem.Application.Common;
 using GradingSystem.Application.DTOs;
 using GradingSystem.Application.Exceptions;
 using GradingSystem.Application.Interfaces;
+using GradingSystem.Application.Messaging;
 using GradingSystem.Domain.Entities;
+using MassTransit;
 using Microsoft.Extensions.Configuration;
 
 namespace GradingSystem.Application.Services;
 
-public class SubmissionService(IUnitOfWork uow, IConfiguration config) : ISubmissionService
+public class SubmissionService(IUnitOfWork uow, IConfiguration config, IPublishEndpoint publishEndpoint) : ISubmissionService
 {
     private readonly string _basePath = config["Storage:BasePath"] ?? "/storage";
 
@@ -19,12 +21,14 @@ public class SubmissionService(IUnitOfWork uow, IConfiguration config) : ISubmis
         if (!string.Equals(Path.GetExtension(req.File.Value.FileName), ".zip", StringComparison.OrdinalIgnoreCase))
             throw new BadRequestException("Only .zip files are accepted.");
 
-        _ = await uow.Assignments.GetByIdAsync(req.AssignmentId)
-            ?? throw new NotFoundException($"Assignment '{req.AssignmentId}' not found.");
+        var code = req.AssignmentCode.Trim().ToUpperInvariant();
+        var matched = await uow.Assignments.FindAsync(a => a.Code == code);
+        var assignment = matched.FirstOrDefault()
+            ?? throw new NotFoundException($"Assignment '{code}' not found.");
 
         var entity = new Submission
         {
-            AssignmentId    = req.AssignmentId,
+            AssignmentId    = assignment.Id,
             StudentCode     = req.StudentCode.Trim(),
             Status          = SubmissionStatus.Pending,
             ArtifactZipPath = string.Empty,
@@ -107,6 +111,7 @@ public class SubmissionService(IUnitOfWork uow, IConfiguration config) : ISubmis
         var job = new GradingJob
         {
             SubmissionId = submissionId,
+            GradingRound = submission.GradingRound,
             Status       = JobStatus.Pending,
         };
 
@@ -114,6 +119,8 @@ public class SubmissionService(IUnitOfWork uow, IConfiguration config) : ISubmis
         uow.Submissions.Update(submission);
         await uow.GradingJobs.AddAsync(job);
         await uow.SaveChangesAsync(ct);
+
+        await publishEndpoint.Publish(new GradeJobMessage(job.Id), ct);
 
         return MapJob(job);
     }

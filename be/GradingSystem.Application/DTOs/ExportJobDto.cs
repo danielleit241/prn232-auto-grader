@@ -7,6 +7,7 @@ public class ExportJobDto
 {
     public Guid Id { get; set; }
     public Guid AssignmentId { get; set; }
+    public string AssignmentCode { get; set; } = string.Empty;
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public ExportStatus Status { get; set; }
     public string? FilePath { get; set; }
@@ -15,5 +16,6 @@ public class ExportJobDto
 
 public class CreateExportRequest
 {
-    public Guid AssignmentId { get; set; }
+    public string AssignmentCode { get; set; } = string.Empty;
+    public string? GradingRound { get; set; }
 }

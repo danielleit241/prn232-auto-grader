@@ -3,6 +3,7 @@ using Asp.Versioning;
 using GradingSystem.Api.Middleware;
 using GradingSystem.Infrastructure.Extensions;
 using GradingSystem.Infrastructure.Persistence;
+using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
 
@@ -39,6 +40,20 @@ builder.Services.AddSwaggerGen(c =>
 
     var xmlPath = Path.Combine(AppContext.BaseDirectory, $"{Assembly.GetExecutingAssembly().GetName().Name}.xml");
     if (File.Exists(xmlPath)) c.IncludeXmlComments(xmlPath);
+});
+
+builder.Services.AddMassTransit(x =>
+{
+    x.UsingRabbitMq((ctx, cfg) =>
+    {
+        cfg.Host(builder.Configuration["RabbitMQ:Host"] ?? "rabbitmq://localhost",
+            h =>
+            {
+                h.Username(builder.Configuration["RabbitMQ:Username"] ?? "guest");
+                h.Password(builder.Configuration["RabbitMQ:Password"] ?? "guest");
+            });
+        cfg.ConfigureEndpoints(ctx);
+    });
 });
 
 builder.Services.AddCors(opt => opt.AddDefaultPolicy(p =>

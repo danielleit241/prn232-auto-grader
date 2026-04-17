@@ -4,6 +4,8 @@ namespace GradingSystem.Application.Interfaces;
 
 public interface IUnitOfWork : IDisposable
 {
+    IGenericRepository<ExamSession> ExamSessions { get; }
+    IGenericRepository<Participant> Participants { get; }
     IGenericRepository<Assignment> Assignments { get; }
     IGenericRepository<Question> Questions { get; }
     IGenericRepository<TestCase> TestCases { get; }

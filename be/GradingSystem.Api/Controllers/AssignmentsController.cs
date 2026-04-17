@@ -22,6 +22,15 @@ public class AssignmentsController(IAssignmentService assignmentService) : BaseA
             : Ok(assignment);
     }
 
+    [HttpGet("assignments/by-code/{code}")]
+    public async Task<IActionResult> GetByCodeAsync(string code, CancellationToken ct)
+    {
+        var assignment = await assignmentService.GetByCodeAsync(code, ct);
+        return assignment is null
+            ? NotFound($"Assignment '{code}' not found.")
+            : Ok(assignment);
+    }
+
     [HttpGet("assignments")]
     public async Task<IActionResult> GetSummariesAsync(CancellationToken ct)
     {

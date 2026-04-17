@@ -55,6 +55,24 @@ public partial class ArtifactRunner(
                 questionDir = studentRoot;
             }
 
+            // Q2: validate student used the correct GivenApiBaseUrl in their appsettings
+            if (question.Type == QuestionType.Razor && assignment.GivenApiBaseUrl != null)
+            {
+                var urlMismatch = CheckGivenApiBaseUrl(questionDir, assignment.GivenApiBaseUrl);
+                if (urlMismatch != null)
+                {
+                    logger.LogWarning("Q2 GivenApiBaseUrl mismatch for question {QId}: {Reason}", question.Id, urlMismatch);
+                    ctx.QuestionApps[question.Id] = new QuestionApp
+                    {
+                        Process = null!,
+                        Port = 0,
+                        GivenUrlInvalid = true,
+                        GivenUrlInvalidReason = urlMismatch,
+                    };
+                    continue;
+                }
+            }
+
             var dll = FindEntryDll(questionDir);
             var port = PickPort();
             var env = BuildEnv(question, dbName, assignment.GivenApiBaseUrl);
@@ -75,6 +93,7 @@ public partial class ArtifactRunner(
     {
         foreach (var (qId, app) in ctx.QuestionApps)
         {
+            if (app.GivenUrlInvalid) continue;
             try
             {
                 if (!app.Process.HasExited)
@@ -171,10 +190,10 @@ public partial class ArtifactRunner(
 
         var candidateDll = Directory.GetFiles(dir, "*.dll", SearchOption.AllDirectories)
             .FirstOrDefault(f => !f.Contains(".Views.") && !f.EndsWith(".runtimeconfig.dll"));
-        
+
         if (candidateDll == null)
             throw new InvalidOperationException($"No suitable DLL found in {dir}");
-        
+
         return candidateDll;
     }
 
@@ -265,6 +284,30 @@ public partial class ArtifactRunner(
         return stripped.StartsWith("CREATE DATABASE", StringComparison.OrdinalIgnoreCase)
             || stripped.StartsWith("USE ", StringComparison.OrdinalIgnoreCase)
             || stripped.StartsWith("USE[", StringComparison.OrdinalIgnoreCase);
+    }
+
+    // Returns null if OK, or an error string if the student's appsettings does not contain the givenApiBaseUrl.
+    private static string? CheckGivenApiBaseUrl(string questionDir, string givenApiBaseUrl)
+    {
+        var appsettingsFiles = Directory.GetFiles(questionDir, "appsettings*.json", SearchOption.AllDirectories)
+            .Where(f => !f.Contains("appsettings.Development", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (appsettingsFiles.Count == 0)
+            return "appsettings.json not found in student artifact";
+
+        foreach (var path in appsettingsFiles)
+        {
+            try
+            {
+                var content = File.ReadAllText(path);
+                if (content.Contains(givenApiBaseUrl, StringComparison.OrdinalIgnoreCase))
+                    return null; // found — OK
+            }
+            catch { /* skip unreadable file */ }
+        }
+
+        return $"Student appsettings does not contain the required GivenApiBaseUrl '{givenApiBaseUrl}'";
     }
 
     [System.Text.RegularExpressions.GeneratedRegex(@"^(\s*/\*.*?\*/\s*)+", System.Text.RegularExpressions.RegexOptions.Singleline)]

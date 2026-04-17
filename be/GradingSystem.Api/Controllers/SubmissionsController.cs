@@ -29,7 +29,7 @@ public class SubmissionsController(
     [HttpPost("submissions/upload")]
     [Consumes("multipart/form-data")]
     public async Task<IActionResult> UploadAsync(
-        [FromForm] Guid assignmentId,
+        [FromForm] string assignmentCode,
         [FromForm] string studentCode,
         IFormFile? file,
         CancellationToken ct)
@@ -40,9 +40,9 @@ public class SubmissionsController(
         await using var stream = file.OpenReadStream();
         var req = new UploadSubmissionRequest
         {
-            AssignmentId = assignmentId,
-            StudentCode  = studentCode,
-            File         = (file.FileName, stream),
+            AssignmentCode = assignmentCode,
+            StudentCode    = studentCode,
+            File           = (file.FileName, stream),
         };
 
         var created = await submissionService.UploadAsync(req, ct);

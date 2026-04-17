@@ -9,19 +9,22 @@ public class ExportService(IUnitOfWork uow) : IExportService
 {
     public async Task<ExportJobDto> CreateAsync(CreateExportRequest req, CancellationToken ct = default)
     {
-        _ = await uow.Assignments.GetByIdAsync(req.AssignmentId)
-            ?? throw new NotFoundException($"Assignment '{req.AssignmentId}' not found.");
+        var code = req.AssignmentCode.Trim().ToUpperInvariant();
+        var assignments = await uow.Assignments.FindAsync(a => a.Code == code);
+        var assignment = assignments.FirstOrDefault()
+            ?? throw new NotFoundException($"Assignment '{code}' not found.");
 
         var job = new ExportJob
         {
-            AssignmentId = req.AssignmentId,
+            AssignmentId = assignment.Id,
+            GradingRound = req.GradingRound?.Trim(),
             Status       = ExportStatus.Pending,
         };
 
         await uow.ExportJobs.AddAsync(job);
         await uow.SaveChangesAsync(ct);
 
-        return Map(job);
+        return Map(job, assignment.Code);
     }
 
     public async Task<string?> GetFilePathAsync(Guid exportJobId, CancellationToken ct = default)
@@ -30,12 +33,13 @@ public class ExportService(IUnitOfWork uow) : IExportService
         return job?.Status == ExportStatus.Done ? job.FilePath : null;
     }
 
-    private static ExportJobDto Map(ExportJob e) => new()
+    private static ExportJobDto Map(ExportJob e, string assignmentCode) => new()
     {
-        Id           = e.Id,
-        AssignmentId = e.AssignmentId,
-        Status       = e.Status,
-        FilePath     = e.FilePath,
-        ErrorMessage = e.ErrorMessage,
+        Id             = e.Id,
+        AssignmentId   = e.AssignmentId,
+        AssignmentCode = assignmentCode,
+        Status         = e.Status,
+        FilePath       = e.FilePath,
+        ErrorMessage   = e.ErrorMessage,
     };
 }

@@ -13,8 +13,14 @@ public class AssignmentService(IUnitOfWork unitOfWork, IConfiguration configurat
 
     public async Task<AssignmentDto> CreateAsync(CreateAssignmentRequest req, CancellationToken ct = default)
     {
+        var code = req.Code.Trim().ToUpperInvariant();
+        var existing = await unitOfWork.Assignments.FindAsync(a => a.Code == code);
+        if (existing.Any())
+            throw new BadRequestException($"Assignment code '{code}' is already in use.");
+
         var entity = new Assignment
         {
+            Code        = code,
             Title       = req.Title.Trim(),
             Description = req.Description?.Trim(),
         };
@@ -31,6 +37,14 @@ public class AssignmentService(IUnitOfWork unitOfWork, IConfiguration configurat
         return entity is null ? null : Map(entity);
     }
 
+    public async Task<AssignmentDto?> GetByCodeAsync(string code, CancellationToken ct = default)
+    {
+        var upper = code.Trim().ToUpperInvariant();
+        var entities = await unitOfWork.Assignments.FindAsync(a => a.Code == upper);
+        var entity = entities.FirstOrDefault();
+        return entity is null ? null : Map(entity);
+    }
+
     public async Task<IReadOnlyList<AssignmentSummaryDto>> GetSummariesAsync(CancellationToken ct = default)
     {
         var entities = await unitOfWork.Assignments.GetAllAsync();
@@ -38,6 +52,7 @@ public class AssignmentService(IUnitOfWork unitOfWork, IConfiguration configurat
             .Select(e => new AssignmentSummaryDto
             {
                 Id          = e.Id,
+                Code        = e.Code,
                 Title       = e.Title,
                 Description = e.Description,
                 CreatedAt   = e.CreatedAt,
@@ -152,6 +167,7 @@ public class AssignmentService(IUnitOfWork unitOfWork, IConfiguration configurat
     private static AssignmentDto Map(Assignment entity) => new()
     {
         Id             = entity.Id,
+        Code           = entity.Code,
         Title          = entity.Title,
         Description    = entity.Description,
         DatabaseSqlPath = entity.DatabaseSqlPath,

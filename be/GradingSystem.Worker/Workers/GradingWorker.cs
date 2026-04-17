@@ -1,123 +1,50 @@
-using System.Collections.Concurrent;
 using GradingSystem.Application.Interfaces;
+using GradingSystem.Application.Messaging;
 using GradingSystem.Domain.Entities;
 using GradingSystem.Worker.Options;
 using GradingSystem.Worker.Services;
+using MassTransit;
 using Microsoft.Extensions.Options;
 
 namespace GradingSystem.Worker.Workers;
 
 public class GradingWorker(
     IServiceScopeFactory scopeFactory,
-    ArtifactRunner artifactRunner,
-    TestRunner testRunner,
+    IPublishEndpoint publishEndpoint,
     ExportRunner exportRunner,
     IOptions<WorkerOptions> opts,
     ILogger<GradingWorker> logger) : BackgroundService
 {
-    private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _locks = new();
-
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
-        logger.LogInformation("GradingWorker started. Poll interval: {Interval}s",
+        logger.LogInformation("GradingWorker started — recovering pending jobs");
+
+        // Crash recovery: re-enqueue any Pending jobs left from a previous run
+        await RecoverPendingJobsAsync(ct);
+
+        logger.LogInformation("GradingWorker polling exports every {Interval}s",
             opts.Value.PollIntervalSeconds);
 
         while (!ct.IsCancellationRequested)
         {
-            await ProcessNextGradingJobAsync(ct);
             await ProcessNextExportJobAsync(ct);
             await Task.Delay(TimeSpan.FromSeconds(opts.Value.PollIntervalSeconds), ct);
         }
     }
 
-    private async Task ProcessNextGradingJobAsync(CancellationToken ct)
+    private async Task RecoverPendingJobsAsync(CancellationToken ct)
     {
         await using var scope = scopeFactory.CreateAsyncScope();
         var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
 
-        var job = (await uow.GradingJobs.FindAsync(j => j.Status == JobStatus.Pending))
-                  .OrderBy(j => j.CreatedAt)
-                  .FirstOrDefault();
+        var pending = (await uow.GradingJobs.FindAsync(j => j.Status == JobStatus.Pending))
+                      .OrderBy(j => j.CreatedAt)
+                      .ToList();
 
-        if (job == null) return;
-
-        var submission = await uow.Submissions.GetByIdAsync(job.SubmissionId);
-        if (submission == null)
+        foreach (var job in pending)
         {
-            logger.LogError("Submission {Id} not found for job {JobId}", job.SubmissionId, job.Id);
-            return;
-        }
-
-        var assignment = await uow.Assignments.GetByIdAsync(submission.AssignmentId);
-        if (assignment == null)
-        {
-            logger.LogError("Assignment {Id} not found for submission {SubId}", submission.AssignmentId, submission.Id);
-            return;
-        }
-
-        submission.Assignment = assignment;
-        job.Submission = submission;
-
-        var questions = (await uow.Questions.FindAsync(q => q.AssignmentId == assignment.Id))
-                        .OrderBy(q => q.CreatedAt)
-                        .ToList();
-
-        var semaphore = _locks.GetOrAdd(assignment.Id, _ => new SemaphoreSlim(1, 1));
-        await semaphore.WaitAsync(ct);
-
-        StudentContext? ctx = null;
-        try
-        {
-            job.Status = JobStatus.Running;
-            job.StartedAt = DateTime.UtcNow;
-            uow.GradingJobs.Update(job);
-            await uow.SaveChangesAsync(ct);
-
-            logger.LogInformation("Processing job {JobId} for submission {SubId}", job.Id, submission.Id);
-
-            ctx = await artifactRunner.RunAsync(job, questions, ct);
-            await testRunner.RunAsync(job, ctx, uow, ct);
-
-            job.Status = JobStatus.Done;
-            submission.Status = SubmissionStatus.Done;
-
-            logger.LogInformation("Job {JobId} completed successfully", job.Id);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Job {JobId} failed", job.Id);
-            job.Status = JobStatus.Failed;
-            job.ErrorMessage = ex.Message;
-            submission.Status = SubmissionStatus.Error;
-
-            foreach (var question in questions)
-            {
-                var existing = (await uow.QuestionResults.FindAsync(
-                    r => r.SubmissionId == submission.Id && r.QuestionId == question.Id)).FirstOrDefault();
-                if (existing == null)
-                    await uow.QuestionResults.AddAsync(new QuestionResult
-                    {
-                        SubmissionId = submission.Id,
-                        QuestionId   = question.Id,
-                        Score        = 0,
-                        MaxScore     = question.MaxScore,
-                    });
-            }
-        }
-        finally
-        {
-            if (ctx != null)
-            {
-                try { await artifactRunner.CleanupAsync(ctx); }
-                catch (Exception ex) { logger.LogWarning(ex, "Cleanup failed for job {JobId}", job.Id); }
-            }
-
-            job.FinishedAt = DateTime.UtcNow;
-            uow.GradingJobs.Update(job);
-            uow.Submissions.Update(submission);
-            await uow.SaveChangesAsync(ct);
-
-            semaphore.Release();
+            await publishEndpoint.Publish(new GradeJobMessage(job.Id), ct);
+            logger.LogInformation("Re-queued recovered job {JobId}", job.Id);
         }
     }
 
