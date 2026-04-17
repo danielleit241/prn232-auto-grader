@@ -42,10 +42,10 @@ export default function SubmissionsPage() {
       let filtered = allSubmissions;
 
       if (filter !== "all") {
-        const filterMap: Record<string, number> = {
-          pending: 0,
-          grading: 1,
-          done: 2,
+        const filterMap: Record<string, string> = {
+          pending: "Pending",
+          grading: "Grading",
+          done: "Done",
         };
         filtered = filtered.filter((s) => s.status === filterMap[filter]);
       }

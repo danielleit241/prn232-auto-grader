@@ -40,10 +40,10 @@ export default function GradingPage() {
       let filtered = allSubmissions;
 
       if (filter !== "all") {
-        const filterMap: Record<string, number> = {
-          pending: 0,
-          grading: 1,
-          done: 2,
+        const filterMap: Record<string, string> = {
+          pending: "Pending",
+          grading: "Grading",
+          done: "Done",
         };
         filtered = filtered.filter((s) => s.status === filterMap[filter]);
       }
@@ -54,7 +54,8 @@ export default function GradingPage() {
       } else if (sortBy === "student") {
         filtered.sort((a, b) => a.studentCode.localeCompare(b.studentCode));
       } else if (sortBy === "status") {
-        filtered.sort((a, b) => a.status - b.status);
+        const statusOrder: Record<string, number> = { "Pending": 0, "Grading": 1, "Done": 2, "Error": 3 };
+        filtered.sort((a, b) => (statusOrder[a.status] ?? 999) - (statusOrder[b.status] ?? 999));
       }
 
       setSubmissions(filtered);
