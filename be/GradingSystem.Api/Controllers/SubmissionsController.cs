@@ -1,4 +1,3 @@
-using GradingSystem.Application.Common;
 using GradingSystem.Application.DTOs;
 using GradingSystem.Application.Interfaces;
 using Microsoft.AspNetCore.Mvc;
@@ -24,36 +23,6 @@ public class SubmissionsController(
     {
         var submission = await submissionService.GetByIdAsync(id, ct);
         return submission is null ? NotFound($"Submission '{id}' not found.") : Ok(submission);
-    }
-
-    [HttpPost("submissions/upload")]
-    [Consumes("multipart/form-data")]
-    public async Task<IActionResult> UploadAsync(
-        [FromForm] string assignmentCode,
-        [FromForm] string studentCode,
-        IFormFile? file,
-        CancellationToken ct)
-    {
-        if (file is not { Length: > 0 })
-            return BadRequest(ApiResponse.Fail("File is required."));
-
-        await using var stream = file.OpenReadStream();
-        var req = new UploadSubmissionRequest
-        {
-            AssignmentCode = assignmentCode,
-            StudentCode    = studentCode,
-            File           = (file.FileName, stream),
-        };
-
-        var created = await submissionService.UploadAsync(req, ct);
-        return StatusCode(StatusCodes.Status201Created, ApiResponse.Success(created, "Submission uploaded."));
-    }
-
-    [HttpPost("submissions/{id:guid}/grade")]
-    public async Task<IActionResult> TriggerGradeAsync(Guid id, CancellationToken ct)
-    {
-        var job = await submissionService.TriggerGradeAsync(id, ct);
-        return Ok(job, "Grading job created.");
     }
 
     [HttpGet("submissions/{id:guid}/results")]

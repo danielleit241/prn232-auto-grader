@@ -32,11 +32,14 @@ public class GradingDbContext(DbContextOptions<GradingDbContext> options) : DbCo
             e.HasIndex(x => new { x.ExamSessionId, x.Username }).IsUnique();
         });
 
-        // Assignment
+        // Assignment: Code unique within ExamSession (null sessions also unique per code)
         b.Entity<Assignment>(e =>
         {
             e.Property(x => x.Code).HasMaxLength(50).IsRequired();
-            e.HasIndex(x => x.Code).IsUnique();
+            e.HasIndex(x => new { x.ExamSessionId, x.Code }).IsUnique()
+                .HasFilter("\"ExamSessionId\" IS NOT NULL");
+            e.HasIndex(x => x.Code).IsUnique()
+                .HasFilter("\"ExamSessionId\" IS NULL");
             e.Property(x => x.Title).HasMaxLength(200).IsRequired();
             e.Property(x => x.GivenApiBaseUrl).HasMaxLength(500);
         });
@@ -81,10 +84,12 @@ public class GradingDbContext(DbContextOptions<GradingDbContext> options) : DbCo
                 .HasFilter("\"GradingJobId\" IS NOT NULL");
         });
 
-        // ExportJob
+        // ExportJob — AssignmentId and ExamSessionId are mutually exclusive (one is set)
         b.Entity<ExportJob>(e =>
         {
             e.Property(x => x.Status).HasConversion<string>();
+            e.HasOne(x => x.Assignment).WithMany().HasForeignKey(x => x.AssignmentId).IsRequired(false);
+            e.HasOne(x => x.ExamSession).WithMany().HasForeignKey(x => x.ExamSessionId).IsRequired(false);
         });
 
         // ReviewNote: one-to-one with Submission

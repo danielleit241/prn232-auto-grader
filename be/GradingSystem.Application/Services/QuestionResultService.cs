@@ -1,3 +1,4 @@
+using System.Text.Json;
 using GradingSystem.Application.Common;
 using GradingSystem.Application.DTOs;
 using GradingSystem.Application.Exceptions;
@@ -44,7 +45,12 @@ public class QuestionResultService(IUnitOfWork unitOfWork) : IQuestionResultServ
         var studentCode = submission?.StudentCode ?? string.Empty;
         var studentId   = StudentCode.ParseId(studentCode);
 
-        return list.Select(e => MapDto(e, studentCode, studentId)).ToList();
+        var questionIds = list.Select(r => r.QuestionId).Distinct().ToList();
+        var questions = (await unitOfWork.Questions.FindAsync(q => questionIds.Contains(q.Id)))
+            .ToDictionary(q => q.Id, q => q.Title);
+
+        return list.Select(e => MapDto(e, studentCode, studentId,
+            questions.GetValueOrDefault(e.QuestionId, string.Empty))).ToList();
     }
 
     public async Task<QuestionResultDto> AdjustAsync(Guid id, AdjustScoreRequest req, CancellationToken ct = default)
@@ -94,23 +100,31 @@ public class QuestionResultService(IUnitOfWork unitOfWork) : IQuestionResultServ
         var submission = await unitOfWork.Submissions.GetByIdAsync(entity.SubmissionId)
             ?? throw new NotFoundException($"Submission '{entity.SubmissionId}' not found.");
 
-        return MapDto(entity, submission.StudentCode, StudentCode.ParseId(submission.StudentCode));
+        var question = await unitOfWork.Questions.GetByIdAsync(entity.QuestionId);
+        return MapDto(entity, submission.StudentCode, StudentCode.ParseId(submission.StudentCode),
+            question?.Title ?? string.Empty);
     }
 
-    private static QuestionResultDto MapDto(Domain.Entities.QuestionResult e, string studentCode, string studentId) => new()
+    private static readonly JsonSerializerOptions _jsonOpts = new() { PropertyNameCaseInsensitive = true };
+
+    private static QuestionResultDto MapDto(Domain.Entities.QuestionResult e, string studentCode, string studentId,
+        string questionTitle) => new()
     {
-        Id            = e.Id,
-        SubmissionId  = e.SubmissionId,
-        QuestionId    = e.QuestionId,
-        StudentCode   = studentCode,
-        StudentId     = studentId,
-        Score         = e.Score,
-        MaxScore      = e.MaxScore,
-        FinalScore    = e.FinalScore,
-        Detail        = e.Detail,
-        AdjustedScore = e.AdjustedScore,
-        AdjustReason  = e.AdjustReason,
-        AdjustedBy    = e.AdjustedBy,
-        AdjustedAt    = e.AdjustedAt,
+        Id              = e.Id,
+        SubmissionId    = e.SubmissionId,
+        QuestionId      = e.QuestionId,
+        QuestionTitle   = questionTitle,
+        StudentCode     = studentCode,
+        StudentId       = studentId,
+        Score           = e.Score,
+        MaxScore        = e.MaxScore,
+        FinalScore      = e.FinalScore,
+        TestCaseResults = string.IsNullOrEmpty(e.Detail)
+            ? null
+            : JsonSerializer.Deserialize<List<TestCaseResult>>(e.Detail, _jsonOpts),
+        AdjustedScore   = e.AdjustedScore,
+        AdjustReason    = e.AdjustReason,
+        AdjustedBy      = e.AdjustedBy,
+        AdjustedAt      = e.AdjustedAt,
     };
 }

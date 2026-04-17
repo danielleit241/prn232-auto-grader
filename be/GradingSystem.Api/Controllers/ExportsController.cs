@@ -13,6 +13,13 @@ public class ExportsController(IExportService svc) : BaseApiController
         return Ok(job, "Export job created.");
     }
 
+    [HttpGet("exports/{id:guid}")]
+    public async Task<IActionResult> GetByIdAsync(Guid id, CancellationToken ct)
+    {
+        var job = await svc.GetByIdAsync(id, ct);
+        return job is null ? NotFound($"Export job '{id}' not found.") : Ok(job);
+    }
+
     [HttpGet("exports/{id:guid}/download")]
     public async Task<IActionResult> DownloadAsync(Guid id, CancellationToken ct)
     {

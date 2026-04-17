@@ -60,9 +60,14 @@ namespace GradingSystem.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("Code")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasFilter("\"ExamSessionId\" IS NULL");
 
                     b.HasIndex("ExamSessionId");
+
+                    b.HasIndex("ExamSessionId", "Code")
+                        .IsUnique()
+                        .HasFilter("\"ExamSessionId\" IS NOT NULL");
 
                     b.ToTable("Assignments");
                 });
@@ -98,7 +103,7 @@ namespace GradingSystem.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<Guid>("AssignmentId")
+                    b.Property<Guid?>("AssignmentId")
                         .HasColumnType("uuid");
 
                     b.Property<DateTime>("CreatedAt")
@@ -106,6 +111,9 @@ namespace GradingSystem.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("ErrorMessage")
                         .HasColumnType("text");
+
+                    b.Property<Guid?>("ExamSessionId")
+                        .HasColumnType("uuid");
 
                     b.Property<string>("FilePath")
                         .HasColumnType("text");
@@ -123,6 +131,8 @@ namespace GradingSystem.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("AssignmentId");
+
+                    b.HasIndex("ExamSessionId");
 
                     b.ToTable("ExportJobs");
                 });
@@ -439,11 +449,15 @@ namespace GradingSystem.Infrastructure.Persistence.Migrations
                 {
                     b.HasOne("GradingSystem.Domain.Entities.Assignment", "Assignment")
                         .WithMany()
-                        .HasForeignKey("AssignmentId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .HasForeignKey("AssignmentId");
+
+                    b.HasOne("GradingSystem.Domain.Entities.ExamSession", "ExamSession")
+                        .WithMany()
+                        .HasForeignKey("ExamSessionId");
 
                     b.Navigation("Assignment");
+
+                    b.Navigation("ExamSession");
                 });
 
             modelBuilder.Entity("GradingSystem.Domain.Entities.GradingJob", b =>

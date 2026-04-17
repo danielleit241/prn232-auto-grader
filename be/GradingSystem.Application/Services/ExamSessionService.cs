@@ -1,4 +1,6 @@
+using System.Text.Json;
 using System.Text.RegularExpressions;
+using GradingSystem.Application.Common;
 using GradingSystem.Application.DTOs;
 using GradingSystem.Application.Exceptions;
 using GradingSystem.Application.Interfaces;
@@ -83,73 +85,6 @@ public partial class ExamSessionService(IUnitOfWork unitOfWork, IPublishEndpoint
         return MapSummary(entity);
     }
 
-    public async Task<ImportParticipantsResultDto> ImportParticipantsAsync(
-        Guid sessionId,
-        Stream csvStream,
-        CancellationToken ct = default)
-    {
-        _ = await unitOfWork.ExamSessions.GetByIdAsync(sessionId)
-            ?? throw new NotFoundException($"ExamSession '{sessionId}' not found.");
-
-        using var reader = new StreamReader(csvStream);
-        var result = new ImportParticipantsResultDto();
-
-        string? line;
-        int lineNumber = 0;
-        while ((line = await reader.ReadLineAsync(ct)) != null)
-        {
-            lineNumber++;
-            if (string.IsNullOrWhiteSpace(line)) continue;
-
-            // Skip header row
-            if (lineNumber == 1 && line.TrimStart().StartsWith("username", StringComparison.OrdinalIgnoreCase))
-                continue;
-
-            var parts = line.Split(',');
-            if (parts.Length < 3)
-            {
-                result.Errors.Add($"Line {lineNumber}: expected 'username,studentCode,assignmentCode'.");
-                continue;
-            }
-
-            var username        = parts[0].Trim().ToLowerInvariant();
-            var studentCode     = parts[1].Trim();
-            var assignmentCode  = parts[2].Trim().ToUpperInvariant();
-
-            var matched = await unitOfWork.Assignments.FindAsync(a => a.Code == assignmentCode);
-            var assignment = matched.FirstOrDefault();
-            if (assignment is null)
-            {
-                result.Errors.Add($"Line {lineNumber}: assignment code '{assignmentCode}' not found.");
-                continue;
-            }
-
-            // Check for duplicate
-            var existing = await unitOfWork.Participants.FindAsync(
-                p => p.ExamSessionId == sessionId && p.Username == username);
-
-            if (existing.Any())
-            {
-                result.Skipped++;
-                continue;
-            }
-
-            await unitOfWork.Participants.AddAsync(new Participant
-            {
-                ExamSessionId = sessionId,
-                Username      = username,
-                StudentCode   = studentCode,
-                AssignmentId  = assignment.Id,
-            });
-            result.Created++;
-        }
-
-        if (result.Created > 0)
-            await unitOfWork.SaveChangesAsync(ct);
-
-        return result;
-    }
-
     public async Task<IReadOnlyList<ParticipantDto>> GetParticipantsAsync(Guid sessionId, CancellationToken ct = default)
     {
         _ = await unitOfWork.ExamSessions.GetByIdAsync(sessionId)
@@ -182,45 +117,98 @@ public partial class ExamSessionService(IUnitOfWork unitOfWork, IPublishEndpoint
         }).ToList();
     }
 
-    public async Task<int> TriggerSessionGradeAsync(Guid sessionId, string gradingRound, CancellationToken ct = default)
+    public async Task<IReadOnlyList<SessionSubmissionResultDto>> GetSessionResultsAsync(
+        Guid sessionId, string? gradingRound, CancellationToken ct = default)
     {
         _ = await unitOfWork.ExamSessions.GetByIdAsync(sessionId)
             ?? throw new NotFoundException($"ExamSession '{sessionId}' not found.");
 
-        // Find all assignments in this session
-        var assignments = await unitOfWork.Assignments.FindAsync(a => a.ExamSessionId == sessionId);
+        var assignments = (await unitOfWork.Assignments.FindAsync(a => a.ExamSessionId == sessionId)).ToList();
         var assignmentIds = assignments.Select(a => a.Id).ToHashSet();
+        var assignmentCodeMap = assignments.ToDictionary(a => a.Id, a => a.Code);
 
-        // Find pending submissions in this session + round
-        var submissions = (await unitOfWork.Submissions.FindAsync(
-            s => assignmentIds.Contains(s.AssignmentId)
-                 && s.GradingRound == gradingRound
-                 && s.HasArtifact
-                 && s.Status == SubmissionStatus.Pending))
-            .ToList();
+        var participants = (await unitOfWork.Participants.FindAsync(p => p.ExamSessionId == sessionId)).ToList();
+        var participantByStudentCode = participants.ToDictionary(p => p.StudentCode, StringComparer.OrdinalIgnoreCase);
+        var usernameByStudentCode    = participants.ToDictionary(p => p.StudentCode, p => p.Username, StringComparer.OrdinalIgnoreCase);
 
-        int enqueued = 0;
+        var submissionsQuery = await unitOfWork.Submissions.FindAsync(s => assignmentIds.Contains(s.AssignmentId));
+        var submissions = (gradingRound != null
+            ? submissionsQuery.Where(s => s.GradingRound == gradingRound)
+            : submissionsQuery).ToList();
 
-        foreach (var submission in submissions)
+        var submissionIds = submissions.Select(s => s.Id).ToHashSet();
+
+        // Latest Done grading job per submission
+        var allJobs = (await unitOfWork.GradingJobs.FindAsync(
+            j => submissionIds.Contains(j.SubmissionId) && j.Status == JobStatus.Done)).ToList();
+        var latestJobBySubmission = allJobs
+            .GroupBy(j => j.SubmissionId)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(j => j.FinishedAt).First().Id);
+        var latestJobIds = latestJobBySubmission.Values.ToHashSet();
+
+        var allResults = (await unitOfWork.QuestionResults.FindAsync(r =>
+            submissionIds.Contains(r.SubmissionId)
+            && (r.GradingJobId == null || latestJobIds.Contains(r.GradingJobId.Value)))).ToList();
+
+        var allNotes = (await unitOfWork.ReviewNotes.FindAsync(n =>
+            submissionIds.Contains(n.SubmissionId))).ToList();
+
+        // Questions per assignment (cached)
+        var questionsByAssignment = new Dictionary<Guid, List<Question>>();
+        foreach (var aId in assignmentIds)
+            questionsByAssignment[aId] = (await unitOfWork.Questions.FindAsync(q => q.AssignmentId == aId))
+                                          .OrderBy(q => q.CreatedAt).ToList();
+
+        var dtos = new List<SessionSubmissionResultDto>(submissions.Count);
+
+        foreach (var sub in submissions.OrderBy(s => s.StudentCode))
         {
-            var job = new GradingJob
+            latestJobBySubmission.TryGetValue(sub.Id, out var latestJobId);
+            var subResults = allResults
+                .Where(r => r.SubmissionId == sub.Id
+                    && (latestJobId == Guid.Empty ? r.GradingJobId == null : r.GradingJobId == latestJobId))
+                .ToList();
+
+            var questions = questionsByAssignment.GetValueOrDefault(sub.AssignmentId, []);
+
+            var qDtos = questions.Select(q =>
             {
-                SubmissionId = submission.Id,
-                GradingRound = submission.GradingRound,
-                Status       = JobStatus.Pending,
-            };
+                var qr = subResults.FirstOrDefault(r => r.QuestionId == q.Id);
+                return new QuestionSummaryResult
+                {
+                    QuestionId    = q.Id,
+                    QuestionTitle = q.Title,
+                    Score         = qr?.Score ?? 0,
+                    FinalScore    = qr?.FinalScore ?? 0,
+                    MaxScore      = q.MaxScore,
+                    AdjustedScore = qr?.AdjustedScore,
+                    AdjustReason  = qr?.AdjustReason,
+                    TestCaseResults = qr?.Detail is { Length: > 0 }
+                        ? JsonSerializer.Deserialize<List<TestCaseResult>>(qr.Detail, _jsonOpts)
+                        : null,
+                };
+            }).ToList();
 
-            submission.Status = SubmissionStatus.Grading;
-            unitOfWork.Submissions.Update(submission);
-            await unitOfWork.GradingJobs.AddAsync(job);
-            await unitOfWork.SaveChangesAsync(ct);
-
-            await publishEndpoint.Publish(new GradeJobMessage(job.Id), ct);
-            enqueued++;
+            dtos.Add(new SessionSubmissionResultDto
+            {
+                SubmissionId   = sub.Id,
+                Username       = usernameByStudentCode.GetValueOrDefault(sub.StudentCode, ""),
+                StudentCode    = sub.StudentCode,
+                AssignmentCode = assignmentCodeMap.GetValueOrDefault(sub.AssignmentId, ""),
+                GradingRound   = sub.GradingRound,
+                Status         = sub.Status,
+                HasArtifact    = sub.HasArtifact,
+                TotalScore     = qDtos.Sum(q => q.FinalScore),
+                MaxScore       = qDtos.Sum(q => q.MaxScore),
+                Questions      = qDtos,
+                Notes          = allNotes.FirstOrDefault(n => n.SubmissionId == sub.Id)?.Content,
+            });
         }
 
-        return enqueued;
+        return dtos;
     }
+
+    private static readonly JsonSerializerOptions _jsonOpts = new(JsonSerializerDefaults.Web);
 
     private static ExamSessionDto MapSummary(ExamSession e) => new()
     {

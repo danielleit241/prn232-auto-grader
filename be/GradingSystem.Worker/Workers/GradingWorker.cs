@@ -10,7 +10,7 @@ namespace GradingSystem.Worker.Workers;
 
 public class GradingWorker(
     IServiceScopeFactory scopeFactory,
-    IPublishEndpoint publishEndpoint,
+    IBus bus,
     ExportRunner exportRunner,
     IOptions<WorkerOptions> opts,
     ILogger<GradingWorker> logger) : BackgroundService
@@ -43,7 +43,7 @@ public class GradingWorker(
 
         foreach (var job in pending)
         {
-            await publishEndpoint.Publish(new GradeJobMessage(job.Id), ct);
+            await bus.Publish(new GradeJobMessage(job.Id), ct);
             logger.LogInformation("Re-queued recovered job {JobId}", job.Id);
         }
     }

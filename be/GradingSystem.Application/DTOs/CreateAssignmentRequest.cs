@@ -12,4 +12,5 @@ public class CreateAssignmentRequest
     public string Title { get; set; } = string.Empty;
     [MaxLength(2000)]
     public string? Description { get; set; }
+    public Guid? ExamSessionId { get; set; }
 }

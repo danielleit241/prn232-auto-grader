@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using GradingSystem.Application.Interfaces;
+using GradingSystem.Application.Services;
 using GradingSystem.Domain.Entities;
 
 namespace GradingSystem.Worker.Services;
@@ -83,6 +84,7 @@ public class GradingPipeline(
             // Insert 0-score results for any question without a result for this job
             var existingResults = await uow.QuestionResults.FindAsync(r => r.GradingJobId == job.Id);
             var gradedIds = existingResults.Select(r => r.QuestionId).ToHashSet();
+            var setupNote = BulkUploadService.MakeNote($"Lỗi setup: {ex.Message}");
             foreach (var q in questions.Where(q => !gradedIds.Contains(q.Id)))
             {
                 await uow.QuestionResults.AddAsync(new QuestionResult
@@ -92,6 +94,7 @@ public class GradingPipeline(
                     QuestionId   = q.Id,
                     Score        = 0,
                     MaxScore     = q.MaxScore,
+                    Detail       = setupNote,
                 });
             }
         }
@@ -103,12 +106,32 @@ public class GradingPipeline(
                 catch (Exception ex) { logger.LogWarning(ex, "Cleanup failed for job {JobId}", job.Id); }
             }
 
+            // Delete artifact zip immediately after grading to free storage
+            DeleteArtifact(submission);
+
             job.FinishedAt = DateTime.UtcNow;
             uow.GradingJobs.Update(job);
             uow.Submissions.Update(submission);
             await uow.SaveChangesAsync(ct);
 
             semaphore.Release();
+        }
+    }
+
+    private void DeleteArtifact(Submission submission)
+    {
+        if (string.IsNullOrEmpty(submission.ArtifactZipPath)) return;
+        try
+        {
+            var dir = Path.GetDirectoryName(submission.ArtifactZipPath);
+            if (dir != null && Directory.Exists(dir))
+                Directory.Delete(dir, recursive: true);
+            submission.ArtifactZipPath = string.Empty;
+            logger.LogInformation("Deleted artifact for submission {Id}", submission.Id);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to delete artifact for submission {Id}", submission.Id);
         }
     }
 }

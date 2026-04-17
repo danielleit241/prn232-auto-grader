@@ -6,7 +6,7 @@ namespace GradingSystem.Api.Controllers;
 
 public class ExamSessionsController(
     IExamSessionService examSessionService,
-    IBulkUploadService bulkUploadService) : BaseApiController
+    IExportService exportService) : BaseApiController
 {
     [HttpPost("exam-sessions")]
     public async Task<IActionResult> CreateAsync([FromBody] CreateExamSessionRequest req, CancellationToken ct)
@@ -36,18 +36,6 @@ public class ExamSessionsController(
         return Ok(deleted, "Exam session deleted.");
     }
 
-    [HttpPost("exam-sessions/{id:guid}/participants/import")]
-    [Consumes("multipart/form-data")]
-    public async Task<IActionResult> ImportParticipantsAsync(Guid id, IFormFile file, CancellationToken ct)
-    {
-        if (file is null || file.Length == 0)
-            return BadRequest("CSV file is required.");
-
-        await using var stream = file.OpenReadStream();
-        var result = await examSessionService.ImportParticipantsAsync(id, stream, ct);
-        return Ok(result, $"Imported {result.Created} participant(s).");
-    }
-
     [HttpGet("exam-sessions/{id:guid}/participants")]
     public async Task<IActionResult> GetParticipantsAsync(Guid id, CancellationToken ct)
     {
@@ -55,29 +43,24 @@ public class ExamSessionsController(
         return Ok(participants);
     }
 
-    [HttpPost("exam-sessions/{id:guid}/grade")]
-    public async Task<IActionResult> TriggerGradeAsync(
+    [HttpGet("exam-sessions/{id:guid}/results")]
+    public async Task<IActionResult> GetResultsAsync(
         Guid id,
-        [FromQuery] string gradingRound = "Lần 1",
-        CancellationToken ct = default)
+        [FromQuery] string? gradingRound,
+        CancellationToken ct)
     {
-        var count = await examSessionService.TriggerSessionGradeAsync(id, gradingRound, ct);
-        return Ok(count, $"Enqueued {count} grading job(s) for round '{gradingRound}'.");
+        var results = await examSessionService.GetSessionResultsAsync(id, gradingRound, ct);
+        return Ok(results);
     }
 
-    [HttpPost("exam-sessions/{id:guid}/bulk-upload")]
-    [Consumes("multipart/form-data")]
-    public async Task<IActionResult> BulkUploadAsync(
+    [HttpPost("exam-sessions/{id:guid}/exports")]
+    public async Task<IActionResult> CreateExportAsync(
         Guid id,
-        IFormFile file,
-        [FromForm] string gradingRound = "Lần 1",
-        CancellationToken ct = default)
+        [FromBody] CreateSessionExportRequest req,
+        CancellationToken ct)
     {
-        if (file is null || file.Length == 0)
-            return BadRequest("Master zip file is required.");
-
-        await using var stream = file.OpenReadStream();
-        var result = await bulkUploadService.ParseAndCreateAsync(id, gradingRound, stream, ct);
-        return Ok(result, $"Bulk upload complete: {result.Created} created, {result.Missing} missing.");
+        var job = await exportService.CreateSessionExportAsync(id, req.GradingRound, ct);
+        return Ok(job, "Session export job created.");
     }
+
 }

@@ -2,53 +2,12 @@ using GradingSystem.Application.Common;
 using GradingSystem.Application.DTOs;
 using GradingSystem.Application.Exceptions;
 using GradingSystem.Application.Interfaces;
-using GradingSystem.Application.Messaging;
 using GradingSystem.Domain.Entities;
-using MassTransit;
-using Microsoft.Extensions.Configuration;
 
 namespace GradingSystem.Application.Services;
 
-public class SubmissionService(IUnitOfWork uow, IConfiguration config, IPublishEndpoint publishEndpoint) : ISubmissionService
+public class SubmissionService(IUnitOfWork uow) : ISubmissionService
 {
-    private readonly string _basePath = config["Storage:BasePath"] ?? "/storage";
-
-    public async Task<SubmissionDto> UploadAsync(UploadSubmissionRequest req, CancellationToken ct = default)
-    {
-        if (req.File is null)
-            throw new BadRequestException("Zip file is required.");
-
-        if (!string.Equals(Path.GetExtension(req.File.Value.FileName), ".zip", StringComparison.OrdinalIgnoreCase))
-            throw new BadRequestException("Only .zip files are accepted.");
-
-        var code = req.AssignmentCode.Trim().ToUpperInvariant();
-        var matched = await uow.Assignments.FindAsync(a => a.Code == code);
-        var assignment = matched.FirstOrDefault()
-            ?? throw new NotFoundException($"Assignment '{code}' not found.");
-
-        var entity = new Submission
-        {
-            AssignmentId    = assignment.Id,
-            StudentCode     = req.StudentCode.Trim(),
-            Status          = SubmissionStatus.Pending,
-            ArtifactZipPath = string.Empty,
-        };
-
-        var dir  = Path.Combine(_basePath, "submissions", entity.Id.ToString());
-        Directory.CreateDirectory(dir);
-        var path = Path.Combine(dir, "artifact.zip");
-
-        await using (var fs = File.Create(path))
-            await req.File.Value.Content.CopyToAsync(fs, ct);
-
-        entity.ArtifactZipPath = path.Replace('\\', '/');
-
-        await uow.Submissions.AddAsync(entity);
-        await uow.SaveChangesAsync(ct);
-
-        return Map(entity);
-    }
-
     public async Task<SubmissionDto?> GetByIdAsync(Guid id, CancellationToken ct = default)
     {
         var entity = await uow.Submissions.GetByIdAsync(id);
@@ -97,34 +56,6 @@ public class SubmissionService(IUnitOfWork uow, IConfiguration config, IPublishE
             .Select(r => MapResult(r, submission.StudentCode));
     }
 
-    public async Task<GradingJobDto> TriggerGradeAsync(Guid submissionId, CancellationToken ct = default)
-    {
-        var submission = await uow.Submissions.GetByIdAsync(submissionId)
-            ?? throw new NotFoundException($"Submission '{submissionId}' not found.");
-
-        if (submission.Status == SubmissionStatus.Grading)
-            throw new ConflictException($"Submission '{submissionId}' is already being graded.");
-
-        if (submission.Status == SubmissionStatus.Done)
-            throw new ConflictException($"Submission '{submissionId}' has already been graded. Use /adjust to override individual scores.");
-
-        var job = new GradingJob
-        {
-            SubmissionId = submissionId,
-            GradingRound = submission.GradingRound,
-            Status       = JobStatus.Pending,
-        };
-
-        submission.Status = SubmissionStatus.Grading;
-        uow.Submissions.Update(submission);
-        await uow.GradingJobs.AddAsync(job);
-        await uow.SaveChangesAsync(ct);
-
-        await publishEndpoint.Publish(new GradeJobMessage(job.Id), ct);
-
-        return MapJob(job);
-    }
-
     public async Task<SubmissionDto> DeleteAsync(Guid submissionId, CancellationToken ct = default)
     {
         var submission = await uow.Submissions.GetByIdAsync(submissionId)
@@ -163,15 +94,8 @@ public class SubmissionService(IUnitOfWork uow, IConfiguration config, IPublishE
         MaxScore        = results is { Count: > 0 } ? results.Sum(r => r.MaxScore)   : null,
     };
 
-    private static GradingJobDto MapJob(GradingJob e) => new()
-    {
-        Id           = e.Id,
-        SubmissionId = e.SubmissionId,
-        Status       = e.Status,
-        ErrorMessage = e.ErrorMessage,
-        StartedAt    = e.StartedAt,
-        FinishedAt   = e.FinishedAt,
-    };
+    private static readonly System.Text.Json.JsonSerializerOptions _jsonOpts =
+        new(System.Text.Json.JsonSerializerDefaults.Web);
 
     private static QuestionResultDto MapResult(QuestionResult r, string studentCode) => new()
     {
@@ -183,7 +107,9 @@ public class SubmissionService(IUnitOfWork uow, IConfiguration config, IPublishE
         Score         = r.Score,
         MaxScore      = r.MaxScore,
         FinalScore    = r.FinalScore,
-        Detail        = r.Detail,
+        TestCaseResults = string.IsNullOrEmpty(r.Detail)
+            ? null
+            : System.Text.Json.JsonSerializer.Deserialize<List<Common.TestCaseResult>>(r.Detail, _jsonOpts),
         AdjustedScore = r.AdjustedScore,
         AdjustReason  = r.AdjustReason,
         AdjustedBy    = r.AdjustedBy,

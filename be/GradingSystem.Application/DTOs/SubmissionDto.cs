@@ -1,4 +1,3 @@
-using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 using GradingSystem.Domain.Entities;
 
@@ -15,16 +14,4 @@ public class SubmissionDto
     public DateTime CreatedAt { get; set; }
     public int? TotalScore { get; set; }
     public int? MaxScore { get; set; }
-}
-
-public class UploadSubmissionRequest
-{
-    [Required]
-    [MaxLength(50)]
-    public string AssignmentCode { get; set; } = string.Empty;
-    [Required]
-    [MaxLength(20)]
-    public string StudentCode { get; set; } = string.Empty;
-    [Required]
-    public (string FileName, Stream Content)? File { get; set; }
 }

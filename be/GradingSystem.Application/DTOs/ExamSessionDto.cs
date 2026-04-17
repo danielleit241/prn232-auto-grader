@@ -1,3 +1,7 @@
+using System.Text.Json.Serialization;
+using GradingSystem.Application.Common;
+using GradingSystem.Domain.Entities;
+
 namespace GradingSystem.Application.DTOs;
 
 public class ExamSessionDto
@@ -33,6 +37,34 @@ public class ParticipantDto
     public string AssignmentCode { get; set; } = string.Empty;
     public string AssignmentTitle { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
+}
+
+public class SessionSubmissionResultDto
+{
+    public Guid SubmissionId { get; set; }
+    public string Username { get; set; } = string.Empty;
+    public string StudentCode { get; set; } = string.Empty;
+    public string AssignmentCode { get; set; } = string.Empty;
+    public string GradingRound { get; set; } = string.Empty;
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public SubmissionStatus Status { get; set; }
+    public bool HasArtifact { get; set; }
+    public int TotalScore { get; set; }
+    public int MaxScore { get; set; }
+    public List<QuestionSummaryResult> Questions { get; set; } = [];
+    public string? Notes { get; set; }
+}
+
+public class QuestionSummaryResult
+{
+    public Guid QuestionId { get; set; }
+    public string QuestionTitle { get; set; } = string.Empty;
+    public int Score { get; set; }
+    public int FinalScore { get; set; }
+    public int MaxScore { get; set; }
+    public int? AdjustedScore { get; set; }
+    public string? AdjustReason { get; set; }
+    public List<TestCaseResult>? TestCaseResults { get; set; }
 }
 
 public class ImportParticipantsResultDto

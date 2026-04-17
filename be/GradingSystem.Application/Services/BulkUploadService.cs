@@ -1,4 +1,6 @@
 using System.IO.Compression;
+using System.Text.Json;
+using GradingSystem.Application.Common;
 using GradingSystem.Application.DTOs;
 using GradingSystem.Application.Exceptions;
 using GradingSystem.Application.Interfaces;
@@ -16,15 +18,15 @@ public class BulkUploadService(
     private readonly string _basePath = config["Storage:BasePath"] ?? "/storage";
 
     public async Task<BulkUploadResultDto> ParseAndCreateAsync(
-        Guid sessionId,
+        Guid assignmentId,
         string gradingRound,
         Stream masterZipStream,
         CancellationToken ct = default)
     {
-        _ = await uow.ExamSessions.GetByIdAsync(sessionId)
-            ?? throw new NotFoundException($"ExamSession '{sessionId}' not found.");
+        _ = await uow.Assignments.GetByIdAsync(assignmentId)
+            ?? throw new NotFoundException($"Assignment '{assignmentId}' not found.");
 
-        var participants = (await uow.Participants.FindAsync(p => p.ExamSessionId == sessionId)).ToList();
+        var participants = (await uow.Participants.FindAsync(p => p.AssignmentId == assignmentId)).ToList();
         var participantByUsername = participants.ToDictionary(p => p.Username, StringComparer.OrdinalIgnoreCase);
 
         var result = new BulkUploadResultDto();
@@ -161,7 +163,7 @@ public class BulkUploadService(
                         QuestionId   = q.Id,
                         Score        = 0,
                         MaxScore     = q.MaxScore,
-                        Detail       = "[]",
+                        Detail       = MakeNote("Sinh viên không nộp bài"),
                     });
                 }
 
@@ -177,6 +179,21 @@ public class BulkUploadService(
 
         return result;
     }
+
+    public static string MakeNote(string message) =>
+        JsonSerializer.Serialize(new[]
+        {
+            new TestCaseResult
+            {
+                TestCaseId    = Guid.Empty,
+                Pass          = false,
+                AwardedScore  = 0,
+                HttpMethod    = "-",
+                Url           = "-",
+                ActualStatus  = 0,
+                FailReason    = message,
+            }
+        });
 
     private static string? FindQuestionFolder(string studentDir, string artifactFolderName)
     {

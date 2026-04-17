@@ -11,6 +11,9 @@ namespace GradingSystem.Worker.Services;
 
 public class TestRunner(ILogger<TestRunner> logger)
 {
+    private static readonly JsonSerializerOptions _jsonOpts =
+        new(JsonSerializerDefaults.Web); // PropertyNameCaseInsensitive = true, no AOT issue
+
     public async Task RunAsync(GradingJob job, StudentContext ctx, IUnitOfWork uow, CancellationToken ct)
     {
         var questions = (await uow.Questions.FindAsync(q => q.AssignmentId == job.Submission.AssignmentId))
@@ -265,7 +268,7 @@ public class TestRunner(ILogger<TestRunner> logger)
             ["item"] = items
         };
 
-        return collection.ToJsonString(new JsonSerializerOptions { WriteIndented = false });
+        return collection.ToJsonString();
     }
 
     private static List<TestCaseResult> ParseNewmanReport(List<TestCase> testCases, string reportJson, int port)
@@ -593,8 +596,7 @@ public class TestRunner(ILogger<TestRunner> logger)
     };
 
     private static ExpectJson DeserializeExpect(string expectJson) =>
-        JsonSerializer.Deserialize<ExpectJson>(expectJson,
-            new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+        JsonSerializer.Deserialize<ExpectJson>(expectJson, _jsonOpts)!;
 
     private static string JsonToQueryString(string inputJson)
     {
