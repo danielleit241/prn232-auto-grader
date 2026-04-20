@@ -1,14 +1,31 @@
 // ==================== Enums ====================
-export type QuestionType = "Api" | "Razor"; // 0 = Api, 1 = Razor
-export type SubmissionStatus = "Pending" | "Grading" | "Done" | "Error";
+export type QuestionType = "Api" | "Razor";
+export type SubmissionStatus = "Pending" | "Grading" | "Done" | "Failed";
 export type JobStatus = "Pending" | "Running" | "Done" | "Failed";
-export type ExportStatus = "Pending" | "Done" | "Failed";
+export type ExportStatus = "Pending" | "Running" | "Done" | "Failed";
+
+// ==================== ExamSession ====================
+export interface ExamSession {
+  id: string;
+  code?: string;
+  title: string;
+  description?: string;
+  createdAt: string;
+  assignments?: Assignment[];
+}
+
+export interface CreateExamSessionRequest {
+  title: string;
+  description?: string;
+}
 
 // ==================== Main Entities ====================
 export interface Assignment {
   id: string;
+  code: string;
   title: string;
   description?: string;
+  examSessionId?: string;
   databaseSqlPath?: string;
   givenApiBaseUrl?: string;
   createdAt: string;
@@ -16,6 +33,7 @@ export interface Assignment {
 
 export interface AssignmentSummary {
   id: string;
+  code: string;
   title: string;
   description?: string;
   createdAt: string;
@@ -50,13 +68,22 @@ export interface TestCase {
   createdAt: string;
 }
 
+export interface Participant {
+  id: string;
+  assignmentId: string;
+  username: string;
+  studentCode: string;
+}
+
 export interface Submission {
   id: string;
   assignmentId: string;
   studentCode: string;
+  username: string;
   sourceCode?: string;
   artifactZipPath: string;
   status: SubmissionStatus;
+  hasArtifact: boolean;
   createdAt: string;
   totalScore?: number;
   maxScore?: number;
@@ -70,6 +97,7 @@ export interface GradingJob {
   startedAt?: string;
   finishedAt?: string;
   createdAt?: string;
+  progress?: number;
 }
 
 export interface QuestionResult {
@@ -96,14 +124,40 @@ export interface QuestionResult {
 }
 
 export interface TestCaseResult {
+  testCaseId: string;
   name: string;
+  pass: boolean;
+  awardedScore: number;
   httpMethod: string;
-  urlTemplate: string;
-  passed: boolean;
-  score?: number;
-  errorMessage?: string;
-  expectedOutput?: string;
-  actualOutput?: string;
+  url: string;
+  actualStatus?: number;
+  actualBody?: string;
+  failReason?: string;
+}
+
+export interface SubmissionQuestionResult {
+  questionId: string;
+  questionTitle: string;
+  score: number;
+  finalScore: number;
+  maxScore: number;
+  adjustedScore?: number;
+  adjustReason?: string;
+  testCaseResults: TestCaseResult[];
+}
+
+export interface SessionSubmissionResult {
+  submissionId: string;
+  username: string;
+  studentCode: string;
+  assignmentCode: string;
+  gradingRound: string;
+  status: SubmissionStatus;
+  hasArtifact: boolean;
+  totalScore: number;
+  maxScore: number;
+  questions: SubmissionQuestionResult[];
+  notes?: string;
 }
 
 export interface ReviewNote {
@@ -111,29 +165,48 @@ export interface ReviewNote {
   submissionId: string;
   studentCode: string;
   notes: string;
+  reviewedBy?: string;
   createdAt: string;
   updatedAt: string;
 }
 
 export interface ExportJob {
   id: string;
-  assignmentId: string;
+  assignmentId?: string;
+  assignmentCode?: string;
+  examSessionId?: string;
+  examSessionTitle?: string;
   status: ExportStatus;
+  gradingRound?: string;
   filePath?: string;
   errorMessage?: string;
   createdAt?: string;
 }
 
+export interface BulkUploadResult {
+  parsed: number;
+  created: number;
+  missing: number;
+  errors: string[];
+}
+
+export interface ImportParticipantsResult {
+  created: number;
+  skipped: number;
+  errors: string[];
+}
+
 // ==================== Request DTOs ====================
 export interface CreateAssignmentRequest {
+  code: string;
   title: string;
   description?: string;
-  deadline?: string;
+  examSessionId?: string;
 }
 
 export interface CreateQuestionRequest {
   title: string;
-  type: 0 | 1; // 0 = Api, 1 = Razor
+  type: 0 | 1;
   maxScore: number;
   artifactFolderName: string;
 }
@@ -143,17 +216,26 @@ export interface CreateTestCaseRequest {
   httpMethod: string;
   urlTemplate: string;
   inputJson?: string;
-  expectJson: string;
+  expectJson?: string;
+  expectedStatus?: number;
   score: number;
 }
 
-export interface CreateExportRequest {
-  assignmentId: string;
+export interface AdjustQuestionResultRequest {
+  adjustedScore: number;
+  adjustReason: string;
+  adjustedBy?: string;
 }
 
 export interface UpdateReviewNoteRequest {
-  submissionId: string;
-  notes: string;
+  content: string;
+  reviewedBy?: string;
+}
+
+export interface CreateExportRequest {
+  assignmentId?: string;
+  gradingRound?: string;
+  examSessionId?: string;
 }
 
 // ==================== API Response ====================

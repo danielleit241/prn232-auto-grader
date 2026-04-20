@@ -1,360 +1,615 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import * as React from "react";
 import Link from "next/link";
+import { useParams } from "next/navigation";
 import { api } from "@/lib";
 import type { Question, TestCase, CreateTestCaseRequest } from "@/types";
-
-interface FormData {
-  name: string;
-  httpMethod: string;
-  urlTemplate: string;
-  inputJson: string;
-  expectJson: string;
-  score: number;
-}
+import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
+import { StatusBadge } from "@/components/ui/StatusBadge";
+import { EmptyState } from "@/components/ui/EmptyState";
 
 export default function QuestionDetailPage() {
   const params = useParams();
-  const assignmentId = params?.id as string;
-  const questionId = params?.qid as string;
-  const [question, setQuestion] = useState<Question | null>(null);
-  const [testCases, setTestCases] = useState<TestCase[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [showForm, setShowForm] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [formData, setFormData] = useState<FormData>({
+  const assignmentId = params.id as string;
+  const questionId = params.qid as string;
+
+  const [question, setQuestion] = React.useState<Question | null>(null);
+  const [testCases, setTestCases] = React.useState<TestCase[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const [showCreate, setShowCreate] = React.useState(false);
+  const [newTestCase, setNewTestCase] = React.useState<CreateTestCaseRequest>({
     name: "",
     httpMethod: "GET",
     urlTemplate: "",
-    inputJson: "",
-    expectJson: "",
-    score: 0,
+    expectedStatus: 200,
+    score: 1,
   });
-  const [submitting, setSubmitting] = useState(false);
+  const [creating, setCreating] = React.useState(false);
+  const [deleting, setDeleting] = React.useState<string | null>(null);
 
-  useEffect(() => {
-    if (questionId) {
-      loadData();
-    }
+  React.useEffect(() => {
+    loadData();
   }, [questionId]);
 
   const loadData = async () => {
     try {
       setLoading(true);
-      
-      // Get all questions for the assignment
-      const qRes = await api.getQuestionsByAssignment(assignmentId);
-      
-      if (qRes.status && qRes.data) {
-        // Find the specific question
-        const foundQuestion = qRes.data.find((q) => q.id === questionId);
-        if (foundQuestion) {
-          setQuestion(foundQuestion);
-          
-          // Get test cases for this question
-          const tcRes = await api.getTestCasesByQuestion(questionId);
-          if (tcRes.status && tcRes.data) {
-            setTestCases(tcRes.data);
-          }
+      // Load question details by fetching all questions from assignment
+      const res = await api.getQuestionsByAssignment(assignmentId);
+      if (res.status && res.data) {
+        const q = res.data.find((q: Question) => q.id === questionId);
+        if (q) {
+          setQuestion(q);
+          await loadTestCases();
         } else {
           setError("Question not found");
         }
+      } else {
+        setError(res.message || "Failed to load question");
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load question data");
+      setError(err instanceof Error ? err.message : "Error loading");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleAddTestCase = async () => {
+  const loadTestCases = async () => {
+    const res = await api.getTestCasesByQuestion(questionId);
+    if (res.status && res.data) {
+      setTestCases(res.data);
+    }
+  };
+
+  const handleCreateTestCase = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTestCase.name.trim() || !newTestCase.urlTemplate.trim()) return;
     try {
-      setSubmitting(true);
-
-      const payload: CreateTestCaseRequest = {
-        name: formData.name,
-        httpMethod: formData.httpMethod,
-        urlTemplate: formData.urlTemplate,
-        inputJson: formData.inputJson || undefined,
-        expectJson: formData.expectJson,
-        score: formData.score,
-      };
-
-      const res = await api.createTestCases(questionId, [payload]);
-
-      if (res.status) {
-        setFormData({
+      setCreating(true);
+      const res = await api.createTestCases(questionId, [newTestCase]);
+      if (res.status && res.data) {
+        setTestCases([...testCases, ...res.data]);
+        setShowCreate(false);
+        setNewTestCase({
           name: "",
           httpMethod: "GET",
           urlTemplate: "",
-          inputJson: "",
-          expectJson: "",
-          score: 0,
+          expectedStatus: 200,
+          score: 1,
         });
-        setShowForm(false);
-        loadData();
-      } else {
-        setError(res.message || "Failed to add test case");
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error adding test case");
+    } catch {
+      // ignore
     } finally {
-      setSubmitting(false);
+      setCreating(false);
     }
   };
 
   const handleDeleteTestCase = async (testCaseId: string) => {
-    if (!confirm("Are you sure you want to delete this test case?")) return;
-
+    if (!confirm("Delete this test case?")) return;
     try {
-      setSubmitting(true);
+      setDeleting(testCaseId);
       const res = await api.deleteTestCase(testCaseId);
       if (res.status) {
-        loadData();
-      } else {
-        setError(res.message || "Failed to delete test case");
+        setTestCases(testCases.filter((tc) => tc.id !== testCaseId));
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error deleting test case");
+    } catch {
+      // ignore
     } finally {
-      setSubmitting(false);
+      setDeleting(null);
     }
   };
 
-  const handleEditTestCase = (tc: TestCase) => {
-    setFormData({
-      name: tc.name || "",
-      httpMethod: tc.httpMethod,
-      urlTemplate: tc.urlTemplate,
-      inputJson: tc.inputJson || "",
-      expectJson: tc.expectJson || tc.value || "",
-      score: tc.score || 0,
-    });
-    setEditingId(tc.id);
-    setShowForm(true);
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
+  if (loading) {
+    return (
+      <div style={{ padding: "80px 24px" }}>
+        <LoadingSpinner fullPage label="Loading question..." />
+      </div>
+    );
+  }
 
-  const handleUpdateTestCase = async () => {
-    if (!editingId) return;
-
-    try {
-      setSubmitting(true);
-
-      const payload: CreateTestCaseRequest = {
-        name: formData.name,
-        httpMethod: formData.httpMethod,
-        urlTemplate: formData.urlTemplate,
-        inputJson: formData.inputJson || undefined,
-        expectJson: formData.expectJson,
-        score: formData.score,
-      };
-
-      const res = await api.updateTestCase(editingId, payload);
-
-      if (res.status) {
-        setFormData({
-          name: "",
-          httpMethod: "GET",
-          urlTemplate: "",
-          inputJson: "",
-          expectJson: "",
-          score: 0,
-        });
-        setEditingId(null);
-        setShowForm(false);
-        loadData();
-      } else {
-        setError(res.message || "Failed to update test case");
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error updating test case");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  if (loading) return <div className="min-h-screen bg-slate-900 text-white p-8">Loading...</div>;
-  if (error || !question) return <div className="min-h-screen bg-slate-900 p-8 text-red-400">{error}</div>;
-
-  return (
-    <div className="min-h-screen bg-slate-900 text-white p-8">
-      <div className="max-w-4xl mx-auto">
-        <Link href={`/assignments/${assignmentId}`} className="text-blue-400 hover:text-blue-300 mb-4 inline-block">
-          ← Back to Assignment
-        </Link>
-
-        <h1 className="text-2xl font-bold mb-2">{question.title}</h1>
-        <p className="text-slate-400 mb-6">
-          Type: {question.type === "Api" ? "Web API (Q1)" : "Razor Pages (Q2)"} | Max Score: {question.maxScore}
-        </p>
-
-        <div className="bg-slate-800 p-6 rounded-lg border border-slate-700 mb-8">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-bold">Test Cases ({testCases.length})</h2>
-            <button
-              onClick={() => setShowForm(!showForm)}
-              className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded transition"
-            >
-              {showForm ? "Cancel" : "Add Test Case"}
-            </button>
-          </div>
-
-          {showForm && (
-            <div className="bg-slate-700 p-4 rounded-lg mb-6">
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm mb-1">Test Case Name</label>
-                  <input
-                    type="text"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    placeholder="e.g., Get User by ID"
-                    className="w-full bg-slate-600 border border-slate-500 rounded px-3 py-2 text-white placeholder-slate-400"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm mb-1">HTTP Method</label>
-                  <select
-                    value={formData.httpMethod}
-                    onChange={(e) => setFormData({ ...formData, httpMethod: e.target.value })}
-                    className="w-full bg-slate-600 border border-slate-500 rounded px-3 py-2 text-white"
-                  >
-                    <option>GET</option>
-                    <option>POST</option>
-                    <option>PUT</option>
-                    <option>DELETE</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm mb-1">URL Template</label>
-                  <input
-                    type="text"
-                    value={formData.urlTemplate}
-                    onChange={(e) => setFormData({ ...formData, urlTemplate: e.target.value })}
-                    placeholder="/api/users"
-                    className="w-full bg-slate-600 border border-slate-500 rounded px-3 py-2 text-white placeholder-slate-400"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm mb-1">Input JSON (Optional)</label>
-                  <textarea
-                    value={formData.inputJson}
-                    onChange={(e) => setFormData({ ...formData, inputJson: e.target.value })}
-                    placeholder='{"id": 1}'
-                    className="w-full bg-slate-600 border border-slate-500 rounded px-3 py-2 text-white placeholder-slate-400 font-mono text-sm"
-                    rows={3}
-                  />
-                  <p className="text-xs text-slate-400 mt-1">Request body or query params as JSON</p>
-                </div>
-
-                <div>
-                  <label className="block text-sm mb-1">Expected JSON Response</label>
-                  <textarea
-                    value={formData.expectJson}
-                    onChange={(e) => setFormData({ ...formData, expectJson: e.target.value })}
-                    placeholder='{"id": 1, "name": "John"}'
-                    className="w-full bg-slate-600 border border-slate-500 rounded px-3 py-2 text-white placeholder-slate-400 font-mono text-sm"
-                    rows={3}
-                  />
-                  <p className="text-xs text-slate-400 mt-1">Expected response JSON</p>
-                </div>
-
-                <div>
-                  <label className="block text-sm mb-1">Score Points</label>
-                  <input
-                    type="number"
-                    value={formData.score}
-                    onChange={(e) => setFormData({ ...formData, score: Number(e.target.value) })}
-                    min={0}
-                    className="w-full bg-slate-600 border border-slate-500 rounded px-3 py-2 text-white"
-                  />
-                </div>
-
-                <div className="flex gap-2">
-                  <button
-                    onClick={editingId ? handleUpdateTestCase : handleAddTestCase}
-                    disabled={submitting || !formData.urlTemplate.trim() || !formData.name.trim()}
-                    className="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-slate-600 px-4 py-2 rounded font-medium transition"
-                  >
-                    {submitting ? (editingId ? "Updating..." : "Adding...") : (editingId ? "Update Test Case" : "Add Test Case")}
-                  </button>
-                  <button
-                    onClick={() => {
-                      setEditingId(null);
-                      setFormData({
-                        name: "",
-                        httpMethod: "GET",
-                        urlTemplate: "",
-                        inputJson: "",
-                        expectJson: "",
-                        score: 0,
-                      });
-                      setShowForm(false);
-                    }}
-                    className="px-4 py-2 bg-slate-600 hover:bg-slate-500 rounded font-medium transition"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {testCases.length === 0 ? (
-            <p className="text-slate-400">No test cases yet</p>
-          ) : (
-            <div className="space-y-4">
-              {testCases.map((tc) => (
-                <div key={tc.id} className="bg-slate-700 p-4 rounded-lg">
-                  <div className="flex justify-between items-start mb-2">
-                    <div className="flex-1">
-                      <p className="font-semibold">{tc.name}</p>
-                      <p className="text-sm text-slate-400">{tc.httpMethod} {tc.urlTemplate}</p>
-                      <p className="text-sm text-slate-400">Score: {tc.score}</p>
-                    </div>
-                    <div className="flex gap-2 ml-4">
-                      <Link
-                        href={`/assignments/${assignmentId}/questions/${questionId}/testcases/${tc.id}`}
-                        className="bg-purple-600 hover:bg-purple-700 px-3 py-1 rounded text-sm transition"
-                      >
-                        View
-                      </Link>
-                      <button
-                        onClick={() => handleEditTestCase(tc)}
-                        disabled={submitting}
-                        className="bg-blue-600 hover:bg-blue-700 disabled:bg-slate-600 px-3 py-1 rounded text-sm transition"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => handleDeleteTestCase(tc.id)}
-                        disabled={submitting}
-                        className="bg-red-600 hover:bg-red-700 disabled:bg-slate-600 px-3 py-1 rounded text-sm transition"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </div>
-                  <details className="text-sm">
-                    <summary className="cursor-pointer text-blue-400 hover:text-blue-300">View Test Details</summary>
-                    <div className="mt-2 bg-slate-600 p-2 rounded text-xs space-y-1">
-                      {tc.inputJson && <div><strong>Input:</strong> {tc.inputJson}</div>}
-                      {(tc.expectJson || tc.value) && <div><strong>Expected Response:</strong> {tc.expectJson || tc.value}</div>}
-                    </div>
-                  </details>
-                </div>
-              ))}
-            </div>
-          )}
+  if (error || !question) {
+    return (
+      <div style={{ padding: "40px 24px", maxWidth: "1200px", margin: "0 auto" }}>
+        <div
+          style={{
+            padding: "16px",
+            backgroundColor: "#fef2f2",
+            border: "1px solid #fecaca",
+            borderRadius: "5px",
+            color: "#dc2626",
+          }}
+        >
+          {error || "Question not found"}
         </div>
       </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: "40px 24px", maxWidth: "1200px", margin: "0 auto" }}>
+      {/* Breadcrumb */}
+      <div
+        style={{
+          fontFamily: "Inter, Arial, sans-serif",
+          fontSize: "0.875rem",
+          color: "#939084",
+          marginBottom: "16px",
+        }}
+      >
+        <Link href="/exam-sessions" style={{ color: "#939084", textDecoration: "none" }}>
+          Exam Sessions
+        </Link>
+        <span style={{ margin: "0 8px" }}>/</span>
+        <Link
+          href={`/assignments/${assignmentId}`}
+          style={{ color: "#939084", textDecoration: "none" }}
+        >
+          Assignment
+        </Link>
+        <span style={{ margin: "0 8px" }}>/</span>
+        <span style={{ color: "#201515" }}>Question</span>
+      </div>
+
+      {/* Page Header */}
+      <div style={{ marginBottom: "40px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
+          <StatusBadge
+            status={question.type === "Api" ? "Api" : "Razor"}
+            variant={question.type === "Api" ? "api" : "razor"}
+          />
+          <h1
+            style={{
+              fontFamily: "Inter, Arial, sans-serif",
+              fontSize: "2rem",
+              fontWeight: 500,
+              lineHeight: 1.1,
+              color: "#201515",
+              margin: 0,
+            }}
+          >
+            {question.title}
+          </h1>
+        </div>
+        <div
+          style={{
+            fontFamily: "Inter, Arial, sans-serif",
+            fontSize: "0.9375rem",
+            color: "#36342e",
+          }}
+        >
+          Max Score: <strong>{question.maxScore} pts</strong> &middot; Folder:{" "}
+          <code
+            style={{
+              backgroundColor: "#eceae3",
+              padding: "1px 6px",
+              borderRadius: "3px",
+            }}
+          >
+            {question.artifactFolderName}
+          </code>
+        </div>
+      </div>
+
+      {/* Test Cases */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: "20px",
+        }}
+      >
+        <h2
+          style={{
+            fontFamily: "Inter, Arial, sans-serif",
+            fontSize: "1.25rem",
+            fontWeight: 600,
+            color: "#201515",
+            margin: 0,
+          }}
+        >
+          Test Cases ({testCases.length})
+        </h2>
+        <button
+          onClick={() => setShowCreate(true)}
+          style={{
+            padding: "8px 16px",
+            fontFamily: "Inter, Arial, sans-serif",
+            fontSize: "0.875rem",
+            fontWeight: 600,
+            color: "#fffefb",
+            backgroundColor: "#ff4f00",
+            border: "1px solid #ff4f00",
+            borderRadius: "4px",
+            cursor: "pointer",
+          }}
+        >
+          + New Test Case
+        </button>
+      </div>
+
+      {showCreate && (
+        <form
+          onSubmit={handleCreateTestCase}
+          style={{
+            backgroundColor: "#fffefb",
+            border: "1px solid #c5c0b1",
+            borderRadius: "5px",
+            padding: "24px",
+            marginBottom: "24px",
+          }}
+        >
+          <h3
+            style={{
+              fontFamily: "Inter, Arial, sans-serif",
+              fontSize: "1.125rem",
+              fontWeight: 600,
+              color: "#201515",
+              marginBottom: "16px",
+            }}
+          >
+            Add Test Case
+          </h3>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 120px 100px 80px",
+              gap: "12px",
+              marginBottom: "16px",
+            }}
+          >
+            <div>
+              <label
+                style={{
+                  display: "block",
+                  fontFamily: "Inter, Arial, sans-serif",
+                  fontSize: "0.75rem",
+                  fontWeight: 600,
+                  color: "#939084",
+                  marginBottom: "4px",
+                }}
+              >
+                Name
+              </label>
+              <input
+                type="text"
+                required
+                placeholder="e.g. GET /api/students"
+                value={newTestCase.name}
+                onChange={(e) =>
+                  setNewTestCase({ ...newTestCase, name: e.target.value })
+                }
+                style={{
+                  width: "100%",
+                  backgroundColor: "#fffefb",
+                  color: "#201515",
+                  border: "1px solid #c5c0b1",
+                  borderRadius: "5px",
+                  padding: "8px 12px",
+                  fontFamily: "Inter, Arial, sans-serif",
+                  fontSize: "0.9375rem",
+                  outline: "none",
+                }}
+                onFocus={(e) => { e.target.style.borderColor = "#ff4f00"; }}
+                onBlur={(e) => { e.target.style.borderColor = "#c5c0b1"; }}
+              />
+            </div>
+            <div>
+              <label
+                style={{
+                  display: "block",
+                  fontFamily: "Inter, Arial, sans-serif",
+                  fontSize: "0.75rem",
+                  fontWeight: 600,
+                  color: "#939084",
+                  marginBottom: "4px",
+                }}
+              >
+                Method
+              </label>
+              <select
+                value={newTestCase.httpMethod}
+                onChange={(e) =>
+                  setNewTestCase({ ...newTestCase, httpMethod: e.target.value })
+                }
+                style={{
+                  width: "100%",
+                  backgroundColor: "#fffefb",
+                  color: "#201515",
+                  border: "1px solid #c5c0b1",
+                  borderRadius: "5px",
+                  padding: "8px 12px",
+                  fontFamily: "Inter, Arial, sans-serif",
+                  fontSize: "0.9375rem",
+                  outline: "none",
+                }}
+              >
+                <option value="GET">GET</option>
+                <option value="POST">POST</option>
+                <option value="PUT">PUT</option>
+                <option value="DELETE">DELETE</option>
+              </select>
+            </div>
+            <div>
+              <label
+                style={{
+                  display: "block",
+                  fontFamily: "Inter, Arial, sans-serif",
+                  fontSize: "0.75rem",
+                  fontWeight: 600,
+                  color: "#939084",
+                  marginBottom: "4px",
+                }}
+              >
+                Status
+              </label>
+              <input
+                type="number"
+                value={newTestCase.expectedStatus}
+                onChange={(e) =>
+                  setNewTestCase({
+                    ...newTestCase,
+                    expectedStatus: Number(e.target.value),
+                  })
+                }
+                style={{
+                  width: "100%",
+                  backgroundColor: "#fffefb",
+                  color: "#201515",
+                  border: "1px solid #c5c0b1",
+                  borderRadius: "5px",
+                  padding: "8px 12px",
+                  fontFamily: "Inter, Arial, sans-serif",
+                  fontSize: "0.9375rem",
+                  outline: "none",
+                }}
+                onFocus={(e) => { e.target.style.borderColor = "#ff4f00"; }}
+                onBlur={(e) => { e.target.style.borderColor = "#c5c0b1"; }}
+              />
+            </div>
+            <div>
+              <label
+                style={{
+                  display: "block",
+                  fontFamily: "Inter, Arial, sans-serif",
+                  fontSize: "0.75rem",
+                  fontWeight: 600,
+                  color: "#939084",
+                  marginBottom: "4px",
+                }}
+              >
+                Score
+              </label>
+              <input
+                type="number"
+                required
+                min={1}
+                value={newTestCase.score}
+                onChange={(e) =>
+                  setNewTestCase({
+                    ...newTestCase,
+                    score: Number(e.target.value),
+                  })
+                }
+                style={{
+                  width: "100%",
+                  backgroundColor: "#fffefb",
+                  color: "#201515",
+                  border: "1px solid #c5c0b1",
+                  borderRadius: "5px",
+                  padding: "8px 12px",
+                  fontFamily: "Inter, Arial, sans-serif",
+                  fontSize: "0.9375rem",
+                  outline: "none",
+                }}
+                onFocus={(e) => { e.target.style.borderColor = "#ff4f00"; }}
+                onBlur={(e) => { e.target.style.borderColor = "#c5c0b1"; }}
+              />
+            </div>
+          </div>
+
+          <div style={{ marginBottom: "16px" }}>
+            <label
+              style={{
+                display: "block",
+                fontFamily: "Inter, Arial, sans-serif",
+                fontSize: "0.75rem",
+                fontWeight: 600,
+                color: "#939084",
+                marginBottom: "4px",
+              }}
+            >
+              URL Template
+            </label>
+            <input
+              type="text"
+              required
+              placeholder="e.g. /api/students"
+              value={newTestCase.urlTemplate}
+              onChange={(e) =>
+                setNewTestCase({ ...newTestCase, urlTemplate: e.target.value })
+              }
+              style={{
+                width: "100%",
+                backgroundColor: "#fffefb",
+                color: "#201515",
+                border: "1px solid #c5c0b1",
+                borderRadius: "5px",
+                padding: "8px 12px",
+                fontFamily: "Inter, Arial, sans-serif",
+                fontSize: "0.9375rem",
+                outline: "none",
+              }}
+              onFocus={(e) => { e.target.style.borderColor = "#ff4f00"; }}
+              onBlur={(e) => { e.target.style.borderColor = "#c5c0b1"; }}
+            />
+          </div>
+
+          <div style={{ display: "flex", gap: "8px" }}>
+            <button
+              type="submit"
+              disabled={creating}
+              style={{
+                padding: "8px 16px",
+                fontFamily: "Inter, Arial, sans-serif",
+                fontSize: "0.875rem",
+                fontWeight: 600,
+                color: "#fffefb",
+                backgroundColor: "#ff4f00",
+                border: "1px solid #ff4f00",
+                borderRadius: "4px",
+                cursor: creating ? "not-allowed" : "pointer",
+                opacity: creating ? 0.6 : 1,
+              }}
+            >
+              {creating ? "Creating..." : "Add Test Case"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowCreate(false)}
+              style={{
+                padding: "8px 16px",
+                fontFamily: "Inter, Arial, sans-serif",
+                fontSize: "0.875rem",
+                fontWeight: 600,
+                color: "#36342e",
+                backgroundColor: "#eceae3",
+                border: "1px solid #c5c0b1",
+                borderRadius: "8px",
+                cursor: "pointer",
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+
+      {testCases.length === 0 ? (
+        <EmptyState
+          title="No test cases yet"
+          description="Add test cases to define grading criteria."
+        />
+      ) : (
+        <div
+          style={{
+            display: "grid",
+            gap: "12px",
+          }}
+        >
+          {testCases.map((tc) => (
+            <div
+              key={tc.id}
+              style={{
+                backgroundColor: "#fffefb",
+                border: "1px solid #c5c0b1",
+                borderRadius: "5px",
+                padding: "16px 20px",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "flex-start",
+                }}
+              >
+                <div style={{ flex: 1 }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                      marginBottom: "4px",
+                    }}
+                  >
+                    <span
+                      style={{
+                        display: "inline-block",
+                        padding: "2px 8px",
+                        borderRadius: "4px",
+                        fontFamily: "Inter, Arial, sans-serif",
+                        fontSize: "0.75rem",
+                        fontWeight: 700,
+                        backgroundColor:
+                          tc.httpMethod === "GET"
+                            ? "#f0f9ff"
+                            : tc.httpMethod === "POST"
+                              ? "#f0fdf4"
+                              : tc.httpMethod === "PUT"
+                                ? "#fff8f0"
+                                : "#fef2f2",
+                        color:
+                          tc.httpMethod === "GET"
+                            ? "#0369a1"
+                            : tc.httpMethod === "POST"
+                              ? "#166534"
+                              : tc.httpMethod === "PUT"
+                                ? "#c2410c"
+                                : "#dc2626",
+                      }}
+                    >
+                      {tc.httpMethod}
+                    </span>
+                    <span
+                      style={{
+                        fontFamily: "Inter, Arial, sans-serif",
+                        fontSize: "0.9375rem",
+                        fontWeight: 600,
+                        color: "#201515",
+                      }}
+                    >
+                      {tc.name}
+                    </span>
+                  </div>
+                  <code
+                    style={{
+                      fontFamily: "monospace",
+                      fontSize: "0.8125rem",
+                      color: "#36342e",
+                      backgroundColor: "#eceae3",
+                      padding: "1px 6px",
+                      borderRadius: "3px",
+                    }}
+                  >
+                    {tc.urlTemplate}
+                  </code>
+                  <span
+                    style={{
+                      marginLeft: "12px",
+                      fontFamily: "Inter, Arial, sans-serif",
+                      fontSize: "0.8125rem",
+                      color: "#939084",
+                    }}
+                  >
+                    Status: {tc.expectedStatus} &middot; {tc.score} pts
+                  </span>
+                </div>
+                <button
+                  onClick={() => handleDeleteTestCase(tc.id)}
+                  disabled={deleting === tc.id}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: "#dc2626",
+                    cursor: deleting === tc.id ? "not-allowed" : "pointer",
+                    fontFamily: "Inter, Arial, sans-serif",
+                    fontSize: "0.8125rem",
+                    fontWeight: 600,
+                    opacity: deleting === tc.id ? 0.5 : 1,
+                  }}
+                >
+                  {deleting === tc.id ? "..." : "Delete"}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

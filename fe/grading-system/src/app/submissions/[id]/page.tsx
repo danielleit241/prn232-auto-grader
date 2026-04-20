@@ -1,267 +1,799 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
-import { useParams, useRouter } from "next/navigation";
+import * as React from "react";
 import Link from "next/link";
+import { useParams } from "next/navigation";
 import { api } from "@/lib";
-import type { Submission, GradingJob, QuestionResult } from "@/types";
+import type {
+  Submission,
+  QuestionResult,
+  TestCaseResult,
+  GradingJob,
+} from "@/types";
+import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
+import { StatusBadge } from "@/components/ui/StatusBadge";
+
+type Tab = "results" | "review";
 
 export default function SubmissionDetailPage() {
   const params = useParams();
-  const router = useRouter();
-  const submissionId = params?.id as string;
-  const [submission, setSubmission] = useState<Submission | null>(null);
-  const [gradingJob, setGradingJob] = useState<GradingJob | null>(null);
-  const [results, setResults] = useState<QuestionResult[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [triggering, setTriggering] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const pollInterval = useRef<NodeJS.Timeout | null>(null);
+  const submissionId = params.id as string;
 
-  useEffect(() => {
-    if (submissionId) {
-      loadSubmission();
-    }
-    return () => {
-      if (pollInterval.current) clearInterval(pollInterval.current);
-    };
+  const [submission, setSubmission] = React.useState<Submission | null>(null);
+  const [results, setResults] = React.useState<QuestionResult[]>([]);
+  const [gradingJobs, setGradingJobs] = React.useState<GradingJob[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+  const [activeTab, setActiveTab] = React.useState<Tab>("results");
+
+  // Review notes state
+  const [notes, setNotes] = React.useState("");
+  const [reviewedBy, setReviewedBy] = React.useState("");
+  const [savingNotes, setSavingNotes] = React.useState(false);
+  const [notesMessage, setNotesMessage] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    loadSubmission();
   }, [submissionId]);
 
   const loadSubmission = async () => {
     try {
       setLoading(true);
-      const res = await api.getSubmissionById(submissionId);
+      const [subRes, resultsRes, jobsRes] = await Promise.all([
+        api.getSubmissionById(submissionId),
+        api.getSubmissionResults(submissionId),
+        api.getGradingJobsBySubmission(submissionId),
+      ]);
 
-      if (res.status && res.data) {
-        setSubmission(res.data);
+      if (subRes.status && subRes.data) {
+        setSubmission(subRes.data);
+      } else {
+        setError(subRes.message || "Failed to load submission");
+      }
 
-        // Load grading jobs
-        const jobRes = await api.getGradingJobsBySubmission(submissionId);
-        if (jobRes.status && jobRes.data && jobRes.data.length > 0) {
-          const latestJob = jobRes.data[0];
-          setGradingJob(latestJob);
+      if (resultsRes.status && resultsRes.data) {
+        setResults(resultsRes.data);
+      }
 
-          // If job is done, load results
-          if (latestJob.status === "Done") {
-              const resultsRes = await api.getSubmissionResults(submissionId);
-            if (resultsRes.status && resultsRes.data) {
-              setResults(resultsRes.data);
-            }
-          }
-        }
+      if (jobsRes.status && jobsRes.data) {
+        setGradingJobs(jobsRes.data);
       }
     } catch (err) {
-      setError("Failed to load submission");
+      setError(err instanceof Error ? err.message : "Error loading");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleTriggerGrading = async () => {
+  const handleSaveNotes = async () => {
     try {
-      setTriggering(true);
-      const res = await api.triggerGrading(submissionId);
-
-      if (res.status && res.data) {
-        setGradingJob(res.data);
-        // Start polling for status updates
-        startPolling();
-      } else {
-        setError(res.message || "Failed to trigger grading");
-      }
-    } catch (err) {
-      setError("An error occurred while triggering grading");
-    } finally {
-      setTriggering(false);
-    }
-  };
-
-  const startPolling = () => {
-    if (pollInterval.current) clearInterval(pollInterval.current);
-    if (!gradingJob?.id) return;
-
-    pollInterval.current = setInterval(async () => {
-      try {
-        const res = await api.getGradingJob(gradingJob.id);
-        if (res.status && res.data) {
-          setGradingJob(res.data);
-
-          if (res.data.status === "Done" || res.data.status === "Failed") {
-            if (pollInterval.current) clearInterval(pollInterval.current);
-
-            // Load results if done
-            if (res.data.status === "Done") {
-              const resultsRes = await api.getSubmissionResults(submissionId);
-              if (resultsRes.status && resultsRes.data) {
-                setResults(resultsRes.data);
-              }
-            }
-          }
-        }
-      } catch (err) {
-        // Continue polling even if error
-      }
-    }, 2000); // Poll every 2 seconds
-  };
-
-  const handleDeleteSubmission = async () => {
-    if (!confirm("Are you sure you want to delete this submission? This action cannot be undone.")) return;
-
-    try {
-      setSubmitting(true);
-      const res = await api.deleteSubmission(submissionId);
+      setSavingNotes(true);
+      setNotesMessage(null);
+      const res = await api.addSubmissionNotes(
+        submissionId,
+        notes,
+        reviewedBy || undefined
+      );
       if (res.status) {
-        router.push("/submissions");
+        setNotesMessage("Notes saved successfully");
       } else {
-        setError(res.message || "Failed to delete submission");
+        setNotesMessage(res.message || "Failed to save notes");
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error deleting submission");
+    } catch {
+      setNotesMessage("Error saving notes");
     } finally {
-      setSubmitting(false);
+      setSavingNotes(false);
     }
   };
 
-  if (loading) return <div className="min-h-screen bg-slate-900 text-white p-8">Loading...</div>;
-  if (error || !submission) return <div className="min-h-screen bg-slate-900 p-8 text-red-400">{error}</div>;
+  if (loading) {
+    return (
+      <div style={{ padding: "80px 24px" }}>
+        <LoadingSpinner fullPage label="Loading submission..." />
+      </div>
+    );
+  }
+
+  if (error || !submission) {
+    return (
+      <div style={{ padding: "40px 24px", maxWidth: "1200px", margin: "0 auto" }}>
+        <div
+          style={{
+            padding: "16px",
+            backgroundColor: "#fef2f2",
+            border: "1px solid #fecaca",
+            borderRadius: "5px",
+            color: "#dc2626",
+          }}
+        >
+          {error || "Submission not found"}
+        </div>
+      </div>
+    );
+  }
+
+  const totalScore = results.reduce((sum, r) => sum + r.finalScore, 0);
+  const maxScore = results.reduce((sum, r) => sum + r.maxScore, 0);
+  const passCount = results.filter((r) => r.passed).length;
+
+  const tabs: { key: Tab; label: string }[] = [
+    { key: "results", label: "Results" },
+    { key: "review", label: "Review" },
+  ];
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white p-8">
-      <div className="max-w-4xl mx-auto">
-        <Link href="/assignments" className="text-blue-400 hover:text-blue-300 mb-4 inline-block">
-          ← Back to Assignments
+    <div style={{ padding: "40px 24px", maxWidth: "1200px", margin: "0 auto" }}>
+      {/* Breadcrumb */}
+      <div
+        style={{
+          fontFamily: "Inter, Arial, sans-serif",
+          fontSize: "0.875rem",
+          color: "#939084",
+          marginBottom: "16px",
+        }}
+      >
+        <Link href="/submissions" style={{ color: "#939084", textDecoration: "none" }}>
+          Submissions
         </Link>
+        <span style={{ margin: "0 8px" }}>/</span>
+        <span style={{ color: "#201515" }}>{submission.studentCode}</span>
+      </div>
 
-        <div className="bg-slate-800 p-6 rounded-lg border border-slate-700 mb-8">
-          <h1 className="text-2xl font-bold mb-4">Submission Details</h1>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <p className="text-slate-400 text-sm">Student Code</p>
-              <p className="font-semibold">{submission.studentCode}</p>
-            </div>
-            <div>
-              <p className="text-slate-400 text-sm">Status</p>
-              <p className={`font-semibold ${
-                submission.status === "Done" ? "text-green-400" :
-                submission.status === "Grading" ? "text-yellow-400" :
-                submission.status === "Error" ? "text-red-400" :
-                "text-slate-300"
-              }`}>
-                {submission.status}
-              </p>
-            </div>
-            <div>
-              <p className="text-slate-400 text-sm">Submitted</p>
-              <p>{new Date(submission.createdAt).toLocaleString()}</p>
-            </div>
-            <div>
-              <p className="text-slate-400 text-sm">Score</p>
-              <p className="font-semibold">
-                {submission.totalScore !== undefined && submission.maxScore
-                  ? `${submission.totalScore}/${submission.maxScore}`
-                  : "-"}
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-6 pt-6 border-t border-slate-600">
-            <h3 className="text-lg font-bold mb-4">Source Code</h3>
-            <pre className="bg-slate-700 p-4 rounded overflow-x-auto text-sm font-mono max-h-96">
-              {submission.sourceCode}
-            </pre>
-          </div>
+      {/* Page Header */}
+      <div style={{ marginBottom: "32px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
+          <StatusBadge status={submission.status} />
+          <h1
+            style={{
+              fontFamily: "Inter, Arial, sans-serif",
+              fontSize: "2rem",
+              fontWeight: 500,
+              lineHeight: 1.1,
+              color: "#201515",
+              margin: 0,
+            }}
+          >
+            {submission.studentCode}
+          </h1>
         </div>
+        <div
+          style={{
+            display: "flex",
+            gap: "24px",
+            fontFamily: "Inter, Arial, sans-serif",
+            fontSize: "0.9375rem",
+            color: "#36342e",
+            flexWrap: "wrap",
+          }}
+        >
+          <span>
+            Artifact:{" "}
+            <strong style={{ color: submission.hasArtifact ? "#166534" : "#dc2626" }}>
+              {submission.hasArtifact ? "Present" : "Missing"}
+            </strong>
+          </span>
+          <span>
+            Score:{" "}
+            <strong>
+              {submission.totalScore !== undefined
+                ? `${submission.totalScore} / ${submission.maxScore}`
+                : `${totalScore} / ${maxScore}`}
+            </strong>
+          </span>
+          <span>
+            Passed: <strong>{passCount} / {results.length}</strong>
+          </span>
+          <span>
+            Submitted:{" "}
+            <strong>
+              {new Date(submission.createdAt).toLocaleDateString("vi-VN", {
+                day: "2-digit",
+                month: "short",
+                year: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </strong>
+          </span>
+        </div>
+      </div>
 
-        {/* Grading Section */}
-        <div className="bg-slate-800 p-6 rounded-lg border border-slate-700 mb-8">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-bold">Grading</h2>
-            <div className="flex gap-2">
-              {!gradingJob || gradingJob.status === "Failed" || gradingJob.status === "Done" ? (
-                <button
-                  onClick={handleTriggerGrading}
-                  disabled={triggering}
-                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-slate-600 px-4 py-2 rounded transition"
-                >
-                  {triggering ? "Triggering..." : "Trigger Grading"}
-                </button>
-              ) : null}
-              <button
-                onClick={handleDeleteSubmission}
-                disabled={submitting}
-                className="bg-red-600 hover:bg-red-700 disabled:bg-slate-600 px-4 py-2 rounded transition"
+      {/* Tab Navigation */}
+      <div
+        style={{
+          display: "flex",
+          gap: "0",
+          borderBottom: "1px solid #c5c0b1",
+          marginBottom: "32px",
+        }}
+      >
+        {tabs.map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              padding: "12px 20px",
+              fontFamily: "Inter, Arial, sans-serif",
+              fontSize: "1rem",
+              fontWeight: 500,
+              color: activeTab === tab.key ? "#201515" : "#939084",
+              backgroundColor: "transparent",
+              border: "none",
+              borderBottom: activeTab === tab.key ? "2px solid #ff4f00" : "2px solid transparent",
+              cursor: "pointer",
+              transition: "color 0.15s ease, border-color 0.15s ease",
+              marginBottom: "-1px",
+            }}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ===== RESULTS TAB ===== */}
+      {activeTab === "results" && (
+        <div>
+          {/* Grading Jobs */}
+          {gradingJobs.length > 0 && (
+            <div
+              style={{
+                backgroundColor: "#fffdf9",
+                border: "1px solid #eceae3",
+                borderRadius: "5px",
+                padding: "16px 20px",
+                marginBottom: "24px",
+              }}
+            >
+              <h3
+                style={{
+                  fontFamily: "Inter, Arial, sans-serif",
+                  fontSize: "0.875rem",
+                  fontWeight: 600,
+                  color: "#36342e",
+                  marginBottom: "12px",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.5px",
+                }}
               >
-                {submitting ? "Deleting..." : "Delete Submission"}
-              </button>
-            </div>
-          </div>
-
-          {gradingJob ? (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-slate-400 text-sm">Job Status</p>
-                  <p className={`font-semibold ${
-                    gradingJob.status === "Done" ? "text-green-400" :
-                    gradingJob.status === "Running" ? "text-yellow-400" :
-                    gradingJob.status === "Failed" ? "text-red-400" :
-                    "text-slate-300"
-                  }`}>
-                    {gradingJob.status}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-slate-400 text-sm">Created</p>
-                  <p>{gradingJob.createdAt ? new Date(gradingJob.createdAt).toLocaleString() : "N/A"}</p>
-                </div>
-              </div>
-
-              {gradingJob.errorMessage && (
-                <div className="bg-red-500/20 border border-red-500 text-red-400 px-4 py-3 rounded">
-                  <p className="font-semibold">Error</p>
-                  <p className="text-sm">{gradingJob.errorMessage}</p>
-                </div>
-              )}
-            </div>
-          ) : (
-            <p className="text-slate-400">No grading job yet. Click "Trigger Grading" to start.</p>
-          )}
-        </div>
-
-        {/* Results Section */}
-        {results.length > 0 && (
-          <div className="bg-slate-800 p-6 rounded-lg border border-slate-700">
-            <h2 className="text-xl font-bold mb-4">Results ({results.length})</h2>
-            <div className="space-y-4">
-              {results.map((r) => (
-                <div key={r.id} className="bg-slate-700 p-4 rounded-lg">
-                  <div className="flex justify-between items-start mb-2">
-                    <div>
-                      <p className="font-semibold">{r.questionTitle}</p>
-                      <p className="text-sm text-slate-400">
-                        Score: {r.scoreObtained}/{r.maxScore}
-                      </p>
-                    </div>
-                    <span className={`px-2 py-1 rounded text-xs font-medium ${
-                      r.passed ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"
-                    }`}>
-                      {r.passed ? "Passed" : "Failed"}
-                    </span>
-                  </div>
-                  {r.output && (
-                    <details className="text-sm">
-                      <summary className="cursor-pointer text-blue-400 hover:text-blue-300">View Output</summary>
-                      <pre className="mt-2 bg-slate-600 p-2 rounded overflow-x-auto text-xs">
-                        {r.output}
-                      </pre>
-                    </details>
+                Grading History
+              </h3>
+              {gradingJobs.map((job) => (
+                <div
+                  key={job.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "12px",
+                    fontFamily: "Inter, Arial, sans-serif",
+                    fontSize: "0.875rem",
+                  }}
+                >
+                  <StatusBadge status={job.status} />
+                  <span style={{ color: "#36342e" }}>
+                    {job.startedAt
+                      ? new Date(job.startedAt).toLocaleString("vi-VN")
+                      : "Pending"}
+                  </span>
+                  {job.errorMessage && (
+                    <span style={{ color: "#dc2626" }}>{job.errorMessage}</span>
                   )}
                 </div>
               ))}
             </div>
+          )}
+
+          {/* Question Results */}
+          {results.length === 0 ? (
+            <div
+              style={{
+                padding: "48px",
+                textAlign: "center",
+                backgroundColor: "#fffefb",
+                border: "1px solid #c5c0b1",
+                borderRadius: "5px",
+              }}
+            >
+              <p
+                style={{
+                  fontFamily: "Inter, Arial, sans-serif",
+                  fontSize: "1rem",
+                  color: "#939084",
+                }}
+              >
+                No grading results yet.
+              </p>
+            </div>
+          ) : (
+            <div style={{ display: "grid", gap: "16px" }}>
+              {results.map((result) => (
+                <div
+                  key={result.id}
+                  style={{
+                    backgroundColor: "#fffefb",
+                    border: "1px solid #c5c0b1",
+                    borderRadius: "5px",
+                    overflow: "hidden",
+                  }}
+                >
+                  {/* Question Header */}
+                  <div
+                    style={{
+                      padding: "16px 20px",
+                      borderBottom: "1px solid #eceae3",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                    }}
+                  >
+                    <div>
+                      <h3
+                        style={{
+                          fontFamily: "Inter, Arial, sans-serif",
+                          fontSize: "1.125rem",
+                          fontWeight: 600,
+                          color: "#201515",
+                          margin: "0 0 4px 0",
+                        }}
+                      >
+                        {result.questionTitle || `Question ${result.questionId}`}
+                      </h3>
+                      <span
+                        style={{
+                          fontFamily: "Inter, Arial, sans-serif",
+                          fontSize: "0.8125rem",
+                          color: "#939084",
+                        }}
+                      >
+                        Student: {result.studentCode}
+                      </span>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div
+                        style={{
+                          fontFamily: "Inter, Arial, sans-serif",
+                          fontSize: "1.5rem",
+                          fontWeight: 700,
+                          color:
+                            result.finalScore / result.maxScore >= 0.5
+                              ? "#166534"
+                              : "#dc2626",
+                        }}
+                      >
+                        {result.finalScore}
+                        <span style={{ fontSize: "1rem", color: "#939084" }}>
+                          {" "}
+                          / {result.maxScore}
+                        </span>
+                      </div>
+                      {result.adjustedScore !== undefined && (
+                        <span
+                          style={{
+                            fontFamily: "Inter, Arial, sans-serif",
+                            fontSize: "0.75rem",
+                            fontWeight: 600,
+                            color: "#ff4f00",
+                          }}
+                        >
+                          Adjusted
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Test Cases Summary */}
+                  <div
+                    style={{
+                      padding: "12px 20px",
+                      backgroundColor: "#fffdf9",
+                      display: "flex",
+                      gap: "16px",
+                      fontFamily: "Inter, Arial, sans-serif",
+                      fontSize: "0.875rem",
+                      color: "#36342e",
+                    }}
+                  >
+                    <span>
+                      Test Cases:{" "}
+                      <strong>
+                        {result.passedTestCases ?? 0} / {result.totalTestCases ?? 0}
+                      </strong>
+                    </span>
+                    {result.adjustReason && (
+                      <span style={{ color: "#ff4f00" }}>
+                        Reason: {result.adjustReason}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ===== REVIEW TAB ===== */}
+      {activeTab === "review" && (
+        <div style={{ maxWidth: "700px" }}>
+          <div
+            style={{
+              backgroundColor: "#fffefb",
+              border: "1px solid #c5c0b1",
+              borderRadius: "5px",
+              padding: "24px",
+            }}
+          >
+            <h3
+              style={{
+                fontFamily: "Inter, Arial, sans-serif",
+                fontSize: "1.125rem",
+                fontWeight: 600,
+                color: "#201515",
+                marginBottom: "16px",
+              }}
+            >
+              Review Notes
+            </h3>
+
+            {notesMessage && (
+              <div
+                style={{
+                  padding: "12px 16px",
+                  backgroundColor:
+                    notesMessage.includes("success") || notesMessage.includes("saved")
+                      ? "#f0fdf4"
+                      : "#fef2f2",
+                  border: `1px solid ${
+                    notesMessage.includes("success") || notesMessage.includes("saved")
+                      ? "#bbf7d0"
+                      : "#fecaca"
+                  }`,
+                  borderRadius: "4px",
+                  color:
+                    notesMessage.includes("success") || notesMessage.includes("saved")
+                      ? "#166534"
+                      : "#dc2626",
+                  marginBottom: "16px",
+                }}
+              >
+                {notesMessage}
+              </div>
+            )}
+
+            <div style={{ marginBottom: "16px" }}>
+              <label
+                style={{
+                  display: "block",
+                  fontFamily: "Inter, Arial, sans-serif",
+                  fontSize: "0.875rem",
+                  fontWeight: 600,
+                  color: "#36342e",
+                  marginBottom: "8px",
+                }}
+              >
+                Notes
+              </label>
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                rows={6}
+                placeholder="Add review notes for this submission..."
+                style={{
+                  width: "100%",
+                  backgroundColor: "#fffefb",
+                  color: "#201515",
+                  border: "1px solid #c5c0b1",
+                  borderRadius: "5px",
+                  padding: "10px 14px",
+                  fontFamily: "Inter, Arial, sans-serif",
+                  fontSize: "0.9375rem",
+                  outline: "none",
+                  resize: "vertical",
+                }}
+                onFocus={(e) => { e.target.style.borderColor = "#ff4f00"; }}
+                onBlur={(e) => { e.target.style.borderColor = "#c5c0b1"; }}
+              />
+            </div>
+
+            <div style={{ marginBottom: "24px" }}>
+              <label
+                style={{
+                  display: "block",
+                  fontFamily: "Inter, Arial, sans-serif",
+                  fontSize: "0.875rem",
+                  fontWeight: 600,
+                  color: "#36342e",
+                  marginBottom: "8px",
+                }}
+              >
+                Reviewer
+              </label>
+              <input
+                type="text"
+                value={reviewedBy}
+                onChange={(e) => setReviewedBy(e.target.value)}
+                placeholder="e.g. gv@fpt.edu.vn"
+                style={{
+                  width: "100%",
+                  backgroundColor: "#fffefb",
+                  color: "#201515",
+                  border: "1px solid #c5c0b1",
+                  borderRadius: "5px",
+                  padding: "10px 14px",
+                  fontFamily: "Inter, Arial, sans-serif",
+                  fontSize: "0.9375rem",
+                  outline: "none",
+                }}
+                onFocus={(e) => { e.target.style.borderColor = "#ff4f00"; }}
+                onBlur={(e) => { e.target.style.borderColor = "#c5c0b1"; }}
+              />
+            </div>
+
+            <button
+              onClick={handleSaveNotes}
+              disabled={savingNotes}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                padding: "10px 20px",
+                fontFamily: "Inter, Arial, sans-serif",
+                fontSize: "1rem",
+                fontWeight: 600,
+                color: "#fffefb",
+                backgroundColor: "#ff4f00",
+                border: "1px solid #ff4f00",
+                borderRadius: "4px",
+                cursor: savingNotes ? "not-allowed" : "pointer",
+                opacity: savingNotes ? 0.6 : 1,
+              }}
+            >
+              {savingNotes ? "Saving..." : "Save Notes"}
+            </button>
           </div>
-        )}
+
+          {/* Per-Question Adjustment */}
+          {results.length > 0 && (
+            <div style={{ marginTop: "32px" }}>
+              <h3
+                style={{
+                  fontFamily: "Inter, Arial, sans-serif",
+                  fontSize: "1.125rem",
+                  fontWeight: 600,
+                  color: "#201515",
+                  marginBottom: "16px",
+                }}
+              >
+                Score Adjustments
+              </h3>
+              {results.map((result) => (
+                <AdjustResultCard key={result.id} result={result} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AdjustResultCard({ result }: { result: QuestionResult }) {
+  const [adjustedScore, setAdjustedScore] = React.useState(
+    result.adjustedScore ?? result.score
+  );
+  const [adjustReason, setAdjustReason] = React.useState(
+    result.adjustReason || ""
+  );
+  const [adjustedBy, setAdjustedBy] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
+  const [message, setMessage] = React.useState<string | null>(null);
+
+  const handleAdjust = async () => {
+    try {
+      setSaving(true);
+      setMessage(null);
+      const res = await api.adjustQuestionResult(result.id, {
+        adjustedScore: Number(adjustedScore),
+        adjustReason,
+        adjustedBy: adjustedBy || undefined,
+      });
+      if (res.status) {
+        setMessage("Adjusted successfully");
+      } else {
+        setMessage(res.message || "Failed");
+      }
+    } catch {
+      setMessage("Error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRemoveAdjustment = async () => {
+    try {
+      setSaving(true);
+      setMessage(null);
+      const res = await api.deleteQuestionResultAdjustment(result.id);
+      if (res.status) {
+        setAdjustedScore(result.score);
+        setAdjustReason("");
+        setMessage("Adjustment removed");
+      }
+    } catch {
+      setMessage("Error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        backgroundColor: "#fffefb",
+        border: "1px solid #c5c0b1",
+        borderRadius: "5px",
+        padding: "20px",
+        marginBottom: "12px",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: "12px",
+        }}
+      >
+        <h4
+          style={{
+            fontFamily: "Inter, Arial, sans-serif",
+            fontSize: "1rem",
+            fontWeight: 600,
+            color: "#201515",
+            margin: 0,
+          }}
+        >
+          {result.questionTitle || `Question ${result.questionId}`}
+        </h4>
+        <span
+          style={{
+            fontFamily: "Inter, Arial, sans-serif",
+            fontSize: "0.9375rem",
+            fontWeight: 600,
+            color: "#201515",
+          }}
+        >
+          Current: {result.finalScore} / {result.maxScore}
+        </span>
+      </div>
+
+      {message && (
+        <div
+          style={{
+            padding: "8px 12px",
+            backgroundColor: "#f0fdf4",
+            border: "1px solid #bbf7d0",
+            borderRadius: "4px",
+            color: "#166534",
+            fontFamily: "Inter, Arial, sans-serif",
+            fontSize: "0.8125rem",
+            marginBottom: "12px",
+          }}
+        >
+          {message}
+        </div>
+      )}
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "100px 1fr 150px",
+          gap: "12px",
+          alignItems: "end",
+        }}
+      >
+        <div>
+          <label
+            style={{
+              display: "block",
+              fontFamily: "Inter, Arial, sans-serif",
+              fontSize: "0.75rem",
+              fontWeight: 600,
+              color: "#939084",
+              marginBottom: "4px",
+            }}
+          >
+            Score
+          </label>
+          <input
+            type="number"
+            min={0}
+            max={result.maxScore}
+            value={adjustedScore}
+            onChange={(e) => setAdjustedScore(Number(e.target.value))}
+            style={{
+              width: "100%",
+              backgroundColor: "#fffefb",
+              color: "#201515",
+              border: "1px solid #c5c0b1",
+              borderRadius: "5px",
+              padding: "6px 10px",
+              fontFamily: "Inter, Arial, sans-serif",
+              fontSize: "0.9375rem",
+              outline: "none",
+            }}
+          />
+        </div>
+        <div>
+          <label
+            style={{
+              display: "block",
+              fontFamily: "Inter, Arial, sans-serif",
+              fontSize: "0.75rem",
+              fontWeight: 600,
+              color: "#939084",
+              marginBottom: "4px",
+            }}
+          >
+            Reason
+          </label>
+          <input
+            type="text"
+            value={adjustReason}
+            onChange={(e) => setAdjustReason(e.target.value)}
+            placeholder="Reason for adjustment"
+            style={{
+              width: "100%",
+              backgroundColor: "#fffefb",
+              color: "#201515",
+              border: "1px solid #c5c0b1",
+              borderRadius: "5px",
+              padding: "6px 10px",
+              fontFamily: "Inter, Arial, sans-serif",
+              fontSize: "0.9375rem",
+              outline: "none",
+            }}
+          />
+        </div>
+        <div style={{ display: "flex", gap: "8px" }}>
+          <button
+            onClick={handleAdjust}
+            disabled={saving}
+            style={{
+              padding: "6px 12px",
+              fontFamily: "Inter, Arial, sans-serif",
+              fontSize: "0.8125rem",
+              fontWeight: 600,
+              color: "#fffefb",
+              backgroundColor: "#ff4f00",
+              border: "1px solid #ff4f00",
+              borderRadius: "4px",
+              cursor: saving ? "not-allowed" : "pointer",
+              opacity: saving ? 0.6 : 1,
+            }}
+          >
+            {saving ? "..." : "Adjust"}
+          </button>
+          {result.adjustedScore !== undefined && (
+            <button
+              onClick={handleRemoveAdjustment}
+              disabled={saving}
+              style={{
+                padding: "6px 12px",
+                fontFamily: "Inter, Arial, sans-serif",
+                fontSize: "0.8125rem",
+                fontWeight: 600,
+                color: "#dc2626",
+                backgroundColor: "transparent",
+                border: "1px solid #c5c0b1",
+                borderRadius: "4px",
+                cursor: saving ? "not-allowed" : "pointer",
+              }}
+            >
+              Remove
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
