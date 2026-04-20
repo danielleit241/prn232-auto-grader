@@ -1,10 +1,13 @@
+using GradingSystem.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
 namespace GradingSystem.Infrastructure.Persistence.Migrations
 {
-    /// <inheritdoc />
+    [DbContext(typeof(GradingDbContext))]
+    [Migration("20260417130000_AssignmentCodeUniquePerSession")]
     public partial class AssignmentCodeUniquePerSession : Migration
     {
         /// <inheritdoc />

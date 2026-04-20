@@ -1,4 +1,6 @@
 using GradingSystem.Infrastructure.Extensions;
+using GradingSystem.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 using GradingSystem.Worker.Consumers;
 using GradingSystem.Worker.Options;
 using GradingSystem.Worker.Services;
@@ -53,4 +55,11 @@ builder.Services.AddHostedService<GradingWorker>();
 builder.Services.AddHostedService<StorageCleanupWorker>();
 
 var host = builder.Build();
+
+using (var scope = host.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<GradingDbContext>();
+    await db.Database.MigrateAsync();
+}
+
 host.Run();
