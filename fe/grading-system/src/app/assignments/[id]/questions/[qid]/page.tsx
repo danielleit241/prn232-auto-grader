@@ -158,8 +158,8 @@ export default function QuestionDetailPage() {
       <div style={{ marginBottom: "40px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
           <StatusBadge
-            status={question.type === "Api" ? "Api" : "Razor"}
-            variant={question.type === "Api" ? "api" : "razor"}
+            status={question.type === 0 ? "Api" : "Razor"}
+            variant={question.type === 0 ? "api" : "razor"}
           />
           <h1
             style={{

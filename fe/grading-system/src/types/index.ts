@@ -1,5 +1,5 @@
 // ==================== Enums ====================
-export type QuestionType = "Api" | "Razor";
+export type QuestionType = 0 | 1;
 export type SubmissionStatus = "Pending" | "Grading" | "Done" | "Failed";
 export type JobStatus = "Pending" | "Running" | "Done" | "Failed";
 export type ExportStatus = "Pending" | "Running" | "Done" | "Failed";

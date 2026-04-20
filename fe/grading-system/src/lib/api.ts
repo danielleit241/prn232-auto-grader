@@ -228,6 +228,19 @@ class ApiClient {
     return this.delete<Assignment>(`/assignments/${assignmentId}`);
   }
 
+  async updateAssignment(
+    id: string,
+    req: {
+      code?: string;
+      title?: string;
+      description?: string;
+      databaseSqlPath?: string;
+      givenApiBaseUrl?: string;
+    }
+  ): Promise<ApiResponse<Assignment>> {
+    return this.put<Assignment>(`/assignments/${id}`, req);
+  }
+
   async uploadAssignmentResources(
     assignmentId: string,
     databaseSql: File | null,
@@ -319,6 +332,27 @@ class ApiClient {
       `/assignments/${assignmentId}/questions`,
       reqs
     );
+  }
+
+  async createQuestion(
+    assignmentId: string,
+    req: CreateQuestionRequest
+  ): Promise<ApiResponse<Question>> {
+    const res = await this.post<Question[]>(
+      `/assignments/${assignmentId}/questions`,
+      [req]
+    );
+    return {
+      status: res.status,
+      message: res.message,
+      data: res.data?.[0] as Question | undefined,
+      errors: res.errors,
+      traceId: res.traceId,
+    };
+  }
+
+  async deleteQuestion(questionId: string): Promise<ApiResponse<Question>> {
+    return this.delete<Question>(`/questions/${questionId}`);
   }
 
   // ====== Test Case Endpoints ======

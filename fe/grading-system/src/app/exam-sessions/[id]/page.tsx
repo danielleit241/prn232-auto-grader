@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { api } from "@/lib";
 import type {
   ExamSession,
@@ -20,7 +20,6 @@ type Tab = "assignments" | "participants" | "results" | "export";
 
 export default function ExamSessionDetailPage() {
   const params = useParams();
-  const router = useRouter();
   const sessionId = params.id as string;
 
   const [session, setSession] = React.useState<ExamSession | null>(null);
@@ -30,6 +29,9 @@ export default function ExamSessionDetailPage() {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [activeTab, setActiveTab] = React.useState<Tab>("assignments");
+
+  const [participantsError, setParticipantsError] = React.useState<string | null>(null);
+  const [resultsError, setResultsError] = React.useState<string | null>(null);
 
   const [showCreateAssignment, setShowCreateAssignment] = React.useState(false);
   const [newAssignment, setNewAssignment] = React.useState({
@@ -44,11 +46,7 @@ export default function ExamSessionDetailPage() {
   const [exportError, setExportError] = React.useState<string | null>(null);
   const [gradingRound, setGradingRound] = React.useState("Lan 1");
 
-  React.useEffect(() => {
-    loadSession();
-  }, [sessionId]);
-
-  const loadSession = async () => {
+  const loadSession = React.useCallback(async () => {
     try {
       setLoading(true);
       const res = await api.getExamSessionById(sessionId);
@@ -65,29 +63,39 @@ export default function ExamSessionDetailPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [sessionId]);
 
-  const loadParticipants = async () => {
+  React.useEffect(() => {
+    loadSession();
+  }, [loadSession]);
+
+  const loadParticipants = React.useCallback(async () => {
+    setParticipantsError(null);
     const res = await api.getExamSessionParticipants(sessionId);
     if (res.status && res.data) {
       setParticipants(res.data);
+    } else {
+      setParticipantsError(res.message || "Failed to load participants");
     }
-  };
+  }, [sessionId]);
 
-  const loadResults = async () => {
+  const loadResults = React.useCallback(async () => {
+    setResultsError(null);
     const res = await api.getExamSessionResults(sessionId, gradingRound);
     if (res.status && res.data) {
       setResults(res.data);
+    } else {
+      setResultsError(res.message || "Failed to load results");
     }
-  };
+  }, [sessionId, gradingRound]);
 
-  const handleTabChange = (tab: Tab) => {
+  const handleTabChange = React.useCallback((tab: Tab) => {
     setActiveTab(tab);
     if (tab === "participants") loadParticipants();
     if (tab === "results") loadResults();
-  };
+  }, [loadParticipants, loadResults]);
 
-  const handleCreateAssignment = async (e: React.FormEvent) => {
+  const handleCreateAssignment = React.useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newAssignment.code.trim() || !newAssignment.title.trim()) return;
 
@@ -98,7 +106,7 @@ export default function ExamSessionDetailPage() {
         examSessionId: sessionId,
       });
       if (res.status && res.data) {
-        setAssignments([...assignments, res.data]);
+        setAssignments((prev) => [...prev, res.data!]);
         setShowCreateAssignment(false);
         setNewAssignment({ code: "", title: "", description: "" });
       } else {
@@ -109,24 +117,38 @@ export default function ExamSessionDetailPage() {
     } finally {
       setCreatingAssignment(false);
     }
-  };
+  }, [newAssignment, sessionId]);
 
-  const handleDeleteAssignment = async (assignmentId: string) => {
+  const handleDeleteAssignment = React.useCallback(async (assignmentId: string) => {
     if (!confirm("Delete this assignment?")) return;
     const res = await api.deleteAssignment(assignmentId);
     if (res.status) {
-      setAssignments(assignments.filter((a) => a.id !== assignmentId));
+      setAssignments((prev) => prev.filter((a) => a.id !== assignmentId));
     }
-  };
+  }, []);
 
-  const handleCreateExport = async () => {
+  const pollRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const handleCreateExport = React.useCallback(async () => {
     try {
       setExporting(true);
       setExportError(null);
       const res = await api.createExamSessionExport(sessionId, gradingRound);
       if (res.status && res.data) {
         setExportJob(res.data);
-        pollExportStatus(res.data.id);
+        if (pollRef.current) clearInterval(pollRef.current);
+        pollRef.current = setInterval(async () => {
+          const r = await api.getExportJob(res.data!.id);
+          if (r.status && r.data) {
+            setExportJob(r.data);
+            if (r.data.status === "Done" || r.data.status === "Failed") {
+              if (pollRef.current) {
+                clearInterval(pollRef.current);
+                pollRef.current = null;
+              }
+            }
+          }
+        }, 2000);
       } else {
         setExportError(res.message || "Failed to create export");
       }
@@ -135,23 +157,19 @@ export default function ExamSessionDetailPage() {
     } finally {
       setExporting(false);
     }
-  };
+  }, [sessionId, gradingRound]);
 
-  const pollExportStatus = async (exportId: string) => {
-    const interval = setInterval(async () => {
-      const res = await api.getExportJob(exportId);
-      if (res.status && res.data) {
-        setExportJob(res.data);
-        if (res.data.status === "Done" || res.data.status === "Failed") {
-          clearInterval(interval);
-        }
-      } else {
-        clearInterval(interval);
+  // Cleanup polling on unmount
+  React.useEffect(() => {
+    return () => {
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
       }
-    }, 2000);
-  };
+    };
+  }, []);
 
-  const handleDownloadExport = async () => {
+  const handleDownloadExport = React.useCallback(async () => {
     if (!exportJob) return;
     try {
       const response = await api.downloadExport(exportJob.id);
@@ -167,10 +185,10 @@ export default function ExamSessionDetailPage() {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
       }
-    } catch (err) {
+    } catch {
       setExportError("Download failed");
     }
-  };
+  }, [exportJob, sessionId]);
 
   if (loading) {
     return (
@@ -684,7 +702,13 @@ export default function ExamSessionDetailPage() {
             Participants ({participants.length})
           </h2>
 
-          {participants.length === 0 ? (
+          {participantsError && (
+            <div style={{ padding: "12px 16px", backgroundColor: "#fef2f2", border: "1px solid #fecaca", borderRadius: "4px", color: "#dc2626", marginBottom: "16px" }}>
+              {participantsError}
+            </div>
+          )}
+
+          {participants.length === 0 && !participantsError ? (
             <EmptyState
               title="No participants imported"
               description="Import participants via CSV from each assignment's setup page."
@@ -763,7 +787,13 @@ export default function ExamSessionDetailPage() {
             </div>
           </div>
 
-          {results.length === 0 ? (
+          {resultsError && (
+            <div style={{ padding: "12px 16px", backgroundColor: "#fef2f2", border: "1px solid #fecaca", borderRadius: "4px", color: "#dc2626", marginBottom: "16px" }}>
+              {resultsError}
+            </div>
+          )}
+
+          {results.length === 0 && !resultsError ? (
             <EmptyState
               title="No results yet"
               description="Results will appear after grading is complete."

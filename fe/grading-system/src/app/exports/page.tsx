@@ -15,27 +15,30 @@ export default function ExportsPage() {
   const [error, setError] = React.useState<string | null>(null);
   const [downloading, setDownloading] = React.useState<string | null>(null);
 
-  // Poll for running exports
-  const [pollInterval, setPollInterval] = React.useState<ReturnType<typeof setInterval> | null>(null);
+  // Use ref for interval ID to avoid stale closure
+  const pollRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
 
   React.useEffect(() => {
     loadJobs();
   }, []);
 
   React.useEffect(() => {
-    // Poll if there are any running/pending exports
     const hasRunning = jobs.some(
       (j) => j.status === "Pending" || j.status === "Running"
     );
-    if (hasRunning && !pollInterval) {
-      const interval = setInterval(loadJobs, 3000);
-      setPollInterval(interval);
-    } else if (!hasRunning && pollInterval) {
-      clearInterval(pollInterval);
-      setPollInterval(null);
+
+    if (hasRunning && !pollRef.current) {
+      pollRef.current = setInterval(loadJobs, 3000);
+    } else if (!hasRunning && pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
     }
+
     return () => {
-      if (pollInterval) clearInterval(pollInterval);
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
     };
   }, [jobs]);
 
