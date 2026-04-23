@@ -36,7 +36,7 @@ public class BulkUploadService(
         try
         {
             using var archive = new ZipArchive(masterZipStream, ZipArchiveMode.Read, leaveOpen: true);
-            archive.ExtractToDirectory(tempRoot, overwriteFiles: true);
+            ExtractArchiveToDirectory(archive, tempRoot);
 
             // Top-level directories = student folders (e.g. "hoalvpse181951")
             var studentDirs = Directory.GetDirectories(tempRoot);
@@ -209,5 +209,41 @@ public class BulkUploadService(
         }
 
         return null;
+    }
+
+    private static void ExtractArchiveToDirectory(ZipArchive archive, string destinationRoot)
+    {
+        var rootFullPath = Path.GetFullPath(destinationRoot);
+        Directory.CreateDirectory(rootFullPath);
+
+        foreach (var entry in archive.Entries)
+        {
+            if (string.IsNullOrWhiteSpace(entry.FullName))
+                continue;
+
+            // Normalize zip separators so extraction is consistent across OSes/zip tools.
+            var normalized = entry.FullName.Replace('\\', '/').TrimStart('/');
+            if (normalized.Length == 0 || normalized.StartsWith("__MACOSX/", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var relativePath = normalized.Replace('/', Path.DirectorySeparatorChar);
+            var destinationPath = Path.GetFullPath(Path.Combine(rootFullPath, relativePath));
+            if (!destinationPath.StartsWith(rootFullPath, StringComparison.Ordinal))
+                continue;
+
+            if (normalized.EndsWith('/'))
+            {
+                Directory.CreateDirectory(destinationPath);
+                continue;
+            }
+
+            var destinationDir = Path.GetDirectoryName(destinationPath);
+            if (!string.IsNullOrEmpty(destinationDir))
+                Directory.CreateDirectory(destinationDir);
+
+            using var source = entry.Open();
+            using var target = File.Create(destinationPath);
+            source.CopyTo(target);
+        }
     }
 }
