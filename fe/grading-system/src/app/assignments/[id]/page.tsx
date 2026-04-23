@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
-import { Upload, FileCode2, FileArchive, Link2, Users, Download } from "lucide-react";
+import { Upload, FileCode2, FileArchive, Link2, Users, Download, CheckCircle2, Lock } from "lucide-react";
 import { api } from "@/lib";
 import type { Assignment, Question, Submission, ExportJob } from "@/types";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
@@ -67,8 +67,13 @@ export default function AssignmentDetailPage() {
   // Polling
   const pollRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const hasParticipants = participants.length > 0;
+  const hasResources = !!(assignment?.databaseSqlPath || assignment?.givenApiBaseUrl || assignment?.hasGivenZip);
+  const hasQuestions = questions.length > 0;
+
   React.useEffect(() => {
     loadAssignment();
+    loadParticipants();
   }, [assignmentId]);
 
   const loadAssignment = async () => {
@@ -107,8 +112,16 @@ export default function AssignmentDetailPage() {
     }
   };
 
+  const loadParticipants = async () => {
+    const res = await api.getParticipants(assignmentId);
+    if (res.status && res.data) {
+      setParticipants(res.data);
+    }
+  };
+
   const handleTabChange = (tab: Tab) => {
     setActiveTab(tab);
+    if (tab === "setup") loadParticipants();
     if (tab === "questions") loadQuestions();
     if (tab === "submissions") loadSubmissions();
   };
@@ -232,7 +245,7 @@ export default function AssignmentDetailPage() {
     try {
       setUploading(true);
       setBulkResult(null);
-      const res = await api.bulkUpload(assignmentId, bulkFile);
+      const res = await api.bulkUpload(assignmentId, bulkFile, gradingRound || undefined);
       if (res.status && res.data) {
         setBulkResult(`Created: ${res.data.created}, Parsed: ${res.data.parsed}, Missing: ${res.data.missing}`);
         loadSubmissions();
@@ -254,6 +267,7 @@ export default function AssignmentDetailPage() {
       const res = await api.importParticipants(assignmentId, importFile);
       if (res.status && res.data) {
         setImportResult(`Created: ${res.data.created}, Skipped: ${res.data.skipped}`);
+        await loadParticipants();
       } else {
         setImportResult(res.message || "Import failed");
       }
@@ -339,8 +353,16 @@ export default function AssignmentDetailPage() {
   const tabs: { key: Tab; label: string }[] = [
     { key: "setup", label: "Setup" },
     { key: "questions", label: "Questions" },
-    { key: "submissions", label: "Submissions" },
-    { key: "export", label: "Export" },
+    { key: "submissions", label: "Submit & Grade" },
+    { key: "export", label: "Results & Export" },
+  ];
+
+  const steps = [
+    { label: "Import Participants", done: hasParticipants },
+    { label: "Upload Resources", done: hasResources },
+    { label: "Setup Questions", done: hasQuestions },
+    { label: "Upload & Grade", done: submissions.length > 0 },
+    { label: "Export Results", done: false },
   ];
 
   return (
@@ -370,7 +392,7 @@ export default function AssignmentDetailPage() {
       </div>
 
       {/* Page Header */}
-      <div style={{ marginBottom: "40px" }}>
+      <div style={{ marginBottom: "24px" }}>
         <p
           style={{
             fontFamily: "Inter, Arial, sans-serif",
@@ -403,6 +425,68 @@ export default function AssignmentDetailPage() {
             {assignment.description}
           </p>
         )}
+      </div>
+
+      {/* ===== Stepper ===== */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "0",
+          padding: "16px 24px",
+          backgroundColor: "#fffdf9",
+          border: "1px solid #eceae3",
+          borderRadius: "8px",
+          marginBottom: "28px",
+          overflowX: "auto",
+        }}
+      >
+        {steps.map((step, i) => (
+          <React.Fragment key={i}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", whiteSpace: "nowrap" }}>
+              <div
+                style={{
+                  width: "24px",
+                  height: "24px",
+                  borderRadius: "50%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  backgroundColor: step.done ? "#16a34a" : "#eceae3",
+                  color: step.done ? "#fff" : "#939084",
+                  fontSize: "0.75rem",
+                  fontWeight: 700,
+                  flexShrink: 0,
+                  transition: "all 0.2s ease",
+                }}
+              >
+                {step.done ? <CheckCircle2 size={14} /> : i + 1}
+              </div>
+              <span
+                style={{
+                  fontFamily: "Inter, Arial, sans-serif",
+                  fontSize: "0.8125rem",
+                  fontWeight: step.done ? 600 : 500,
+                  color: step.done ? "#166534" : "#939084",
+                }}
+              >
+                {step.label}
+              </span>
+            </div>
+            {i < steps.length - 1 && (
+              <div
+                style={{
+                  flex: 1,
+                  height: "2px",
+                  minWidth: "24px",
+                  margin: "0 12px",
+                  backgroundColor: step.done ? "#16a34a" : "#eceae3",
+                  transition: "background-color 0.2s ease",
+                }}
+              />
+            )}
+          </React.Fragment>
+        ))}
       </div>
 
       {/* Tab Navigation */}
@@ -444,6 +528,69 @@ export default function AssignmentDetailPage() {
       {/* ===== SETUP TAB ===== */}
       {activeTab === "setup" && (
         <div>
+          {/* Step 1: Import Participants (MUST be first) */}
+          <div
+            style={{
+              backgroundColor: "#fffefb",
+              border: hasParticipants ? "1px solid #bbf7d0" : "1px solid #ff4f00",
+              borderRadius: "5px",
+              padding: "32px",
+              maxWidth: "600px",
+              marginBottom: "24px",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+              {hasParticipants ? <CheckCircle2 size={18} color="#16a34a" /> : <Users size={18} color="#ff4f00" />}
+              <h2 style={{ fontFamily: "Inter, Arial, sans-serif", fontSize: "1.25rem", fontWeight: 600, color: "#201515", margin: 0 }}>
+                Step 1: Import Participants
+              </h2>
+            </div>
+            {hasParticipants ? (
+              <p style={{ fontFamily: "Inter, Arial, sans-serif", fontSize: "0.875rem", color: "#166534", marginBottom: "16px" }}>
+                ✓ {participants.length} participant(s) imported. You can re-import to update.
+              </p>
+            ) : (
+              <p style={{ fontFamily: "Inter, Arial, sans-serif", fontSize: "0.875rem", color: "#c2410c", marginBottom: "16px" }}>
+                ⚠ You must import participants before proceeding. Format: username,studentCode
+              </p>
+            )}
+            <div style={{ marginBottom: "16px" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: "10px", padding: "10px 14px", border: `1px dashed ${importFile ? "#ff4f00" : "#c5c0b1"}`, borderRadius: "5px", backgroundColor: importFile ? "#fff8f5" : "#fffefb", cursor: "pointer", transition: "border-color 0.15s, background-color 0.15s" }}>
+                <Upload size={16} color={importFile ? "#ff4f00" : "#939084"} />
+                <span style={{ fontFamily: "Inter, Arial, sans-serif", fontSize: "0.9375rem", color: importFile ? "#ff4f00" : "#939084", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {importFile ? importFile.name : "Chọn file .csv…"}
+                </span>
+                {importFile && (
+                  <span style={{ fontFamily: "Inter, Arial, sans-serif", fontSize: "0.75rem", color: "#939084", flexShrink: 0 }}>
+                    {(importFile.size / 1024).toFixed(1)} KB
+                  </span>
+                )}
+                <input type="file" accept=".csv" onChange={(e) => setImportFile(e.target.files?.[0] || null)} style={{ display: "none" }} />
+              </label>
+            </div>
+            {importResult && (
+              <div style={{ padding: "12px 16px", backgroundColor: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "4px", color: "#166534", marginBottom: "16px" }}>
+                {importResult}
+              </div>
+            )}
+            <button onClick={handleImportParticipants} disabled={!importFile || uploading} style={{ display: "inline-flex", alignItems: "center", gap: "8px", padding: "8px 16px", fontFamily: "Inter, Arial, sans-serif", fontSize: "0.875rem", fontWeight: 600, color: "#fffefb", backgroundColor: "#ff4f00", border: "1px solid #ff4f00", borderRadius: "4px", cursor: !importFile || uploading ? "not-allowed" : "pointer", opacity: !importFile || uploading ? 0.6 : 1 }}>
+              <Users size={15} />
+              {uploading ? "Importing..." : "Import Participants"}
+            </button>
+          </div>
+
+          {/* Lock banner when no participants */}
+          {!hasParticipants && (
+            <div style={{ padding: "16px 20px", backgroundColor: "#fef2f2", border: "1px solid #fecaca", borderRadius: "5px", maxWidth: "600px", marginBottom: "24px", display: "flex", alignItems: "center", gap: "10px" }}>
+              <Lock size={16} color="#dc2626" />
+              <span style={{ fontFamily: "Inter, Arial, sans-serif", fontSize: "0.875rem", color: "#dc2626", fontWeight: 500 }}>
+                Import participants first to unlock the sections below.
+              </span>
+            </div>
+          )}
+
+          {/* Step 2: Upload Resources (locked if no participants) */}
+          <div style={{ opacity: hasParticipants ? 1 : 0.4, pointerEvents: hasParticipants ? "auto" : "none" }}>
           <div
             style={{
               backgroundColor: "#fffefb",
@@ -606,154 +753,7 @@ export default function AssignmentDetailPage() {
               {savingSetup ? "Uploading..." : "Upload Resources"}
             </button>
           </div>
-
-          {/* Grading Trigger */}
-          <div
-            style={{
-              backgroundColor: "#fffefb",
-              border: "1px solid #c5c0b1",
-              borderRadius: "5px",
-              padding: "32px",
-              maxWidth: "600px",
-              marginTop: "24px",
-            }}
-          >
-            <h2
-              style={{
-                fontFamily: "Inter, Arial, sans-serif",
-                fontSize: "1.25rem",
-                fontWeight: 600,
-                color: "#201515",
-                marginBottom: "8px",
-              }}
-            >
-              Trigger Grading
-            </h2>
-            <p style={{ fontFamily: "Inter, Arial, sans-serif", fontSize: "0.9375rem", color: "#939084", marginBottom: "20px" }}>
-              Start the grading worker for all pending submissions in this assignment.
-            </p>
-
-            <div style={{ display: "flex", gap: "12px", alignItems: "center", marginBottom: "16px" }}>
-              <input
-                type="text"
-                value={gradingRound}
-                onChange={(e) => setGradingRound(e.target.value)}
-                placeholder="e.g. Lan 1"
-                style={{ padding: "8px 12px", backgroundColor: "#fffefb", color: "#201515", border: "1px solid #c5c0b1", borderRadius: "5px", fontFamily: "Inter, Arial, sans-serif", fontSize: "0.9375rem", outline: "none" }}
-              />
-            </div>
-
-            {exportError && (
-              <div style={{ padding: "12px 16px", backgroundColor: "#fef2f2", border: "1px solid #fecaca", borderRadius: "4px", color: "#dc2626", marginBottom: "16px" }}>
-                {exportError}
-              </div>
-            )}
-
-            {exportJob && (
-              <div style={{ padding: "16px", backgroundColor: exportJob.status === "Done" ? "#f0fdf4" : exportJob.status === "Failed" ? "#fef2f2" : "#fff8f0", border: `1px solid ${exportJob.status === "Done" ? "#bbf7d0" : exportJob.status === "Failed" ? "#fecaca" : "#ff4f00"}`, borderRadius: "4px", marginBottom: "16px" }}>
-                <p style={{ fontFamily: "Inter, Arial, sans-serif", fontSize: "0.9375rem", fontWeight: 600, color: "#201515" }}>
-                  Status: <StatusBadge status={exportJob.status} />
-                </p>
-                {exportJob.errorMessage && (
-                  <p style={{ fontFamily: "Inter, Arial, sans-serif", fontSize: "0.8125rem", color: "#dc2626" }}>{exportJob.errorMessage}</p>
-                )}
-              </div>
-            )}
-
-            <button
-              onClick={handleTriggerGrading}
-              disabled={exporting}
-              style={{
-                padding: "10px 20px",
-                fontFamily: "Inter, Arial, sans-serif",
-                fontSize: "1rem",
-                fontWeight: 600,
-                color: "#fffefb",
-                backgroundColor: "#ff4f00",
-                border: "1px solid #ff4f00",
-                borderRadius: "4px",
-                cursor: exporting ? "not-allowed" : "pointer",
-                opacity: exporting ? 0.6 : 1,
-              }}
-            >
-              {exporting ? "Triggering..." : "Trigger Grading"}
-            </button>
-          </div>
-
-          {/* Participants */}
-          <div
-            style={{
-              backgroundColor: "#fffefb",
-              border: "1px solid #c5c0b1",
-              borderRadius: "5px",
-              padding: "32px",
-              maxWidth: "600px",
-              marginTop: "24px",
-            }}
-          >
-            <h2 style={{ fontFamily: "Inter, Arial, sans-serif", fontSize: "1.25rem", fontWeight: 600, color: "#201515", marginBottom: "8px" }}>
-              Import Participants
-            </h2>
-            <p style={{ fontFamily: "Inter, Arial, sans-serif", fontSize: "0.9375rem", color: "#939084", marginBottom: "20px" }}>
-              Import participants from a CSV file. Format: username,studentCode
-            </p>
-
-            <div style={{ marginBottom: "16px" }}>
-              <label
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "10px",
-                  padding: "10px 14px",
-                  border: `1px dashed ${importFile ? "#ff4f00" : "#c5c0b1"}`,
-                  borderRadius: "5px",
-                  backgroundColor: importFile ? "#fff8f5" : "#fffefb",
-                  cursor: "pointer",
-                  transition: "border-color 0.15s, background-color 0.15s",
-                }}
-              >
-                <Upload size={16} color={importFile ? "#ff4f00" : "#939084"} />
-                <span style={{ fontFamily: "Inter, Arial, sans-serif", fontSize: "0.9375rem", color: importFile ? "#ff4f00" : "#939084", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {importFile ? importFile.name : "Chọn file .csv…"}
-                </span>
-                {importFile && (
-                  <span style={{ fontFamily: "Inter, Arial, sans-serif", fontSize: "0.75rem", color: "#939084", flexShrink: 0 }}>
-                    {(importFile.size / 1024).toFixed(1)} KB
-                  </span>
-                )}
-                <input type="file" accept=".csv" onChange={(e) => setImportFile(e.target.files?.[0] || null)} style={{ display: "none" }} />
-              </label>
-            </div>
-
-            {importResult && (
-              <div style={{ padding: "12px 16px", backgroundColor: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "4px", color: "#166534", marginBottom: "16px" }}>
-                {importResult}
-              </div>
-            )}
-
-            <button
-              onClick={handleImportParticipants}
-              disabled={!importFile || uploading}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "8px",
-                padding: "8px 16px",
-                fontFamily: "Inter, Arial, sans-serif",
-                fontSize: "0.875rem",
-                fontWeight: 600,
-                color: "#fffefb",
-                backgroundColor: "#ff4f00",
-                border: "1px solid #ff4f00",
-                borderRadius: "4px",
-                cursor: !importFile || uploading ? "not-allowed" : "pointer",
-                opacity: !importFile || uploading ? 0.6 : 1,
-              }}
-            >
-              <Users size={15} />
-              {uploading ? "Importing..." : "Import Participants"}
-            </button>
-          </div>
+          </div>{/* close lock wrapper */}
         </div>
       )}
 
@@ -955,57 +955,136 @@ export default function AssignmentDetailPage() {
             </h2>
           </div>
 
-          {/* Bulk Upload */}
+          {/* Bulk Upload & Grade */}
           <div
             style={{
               backgroundColor: "#fffdf9",
               border: "1px solid #eceae3",
               borderRadius: "5px",
-              padding: "20px",
+              padding: "24px",
               marginBottom: "24px",
             }}
           >
-            <h3 style={{ fontFamily: "Inter, Arial, sans-serif", fontSize: "1rem", fontWeight: 600, color: "#201515", marginBottom: "12px" }}>
-              Bulk Upload Submissions (ZIP)
+            <h3 style={{ fontFamily: "Inter, Arial, sans-serif", fontSize: "1.125rem", fontWeight: 600, color: "#201515", marginBottom: "16px" }}>
+              Upload & Grade Submissions
             </h3>
-            <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap", marginBottom: "12px" }}>
-              <label
+
+            {/* Step 1: Grading Round */}
+            <div style={{ marginBottom: "16px" }}>
+              <label style={{ display: "block", fontFamily: "Inter, Arial, sans-serif", fontSize: "0.8125rem", fontWeight: 600, color: "#36342e", marginBottom: "6px" }}>
+                Grading Round <span style={{ color: "#dc2626" }}>*</span>
+              </label>
+              <input
+                type="text"
+                value={gradingRound}
+                onChange={(e) => setGradingRound(e.target.value)}
+                placeholder="e.g. Lần 1, Lần 2"
                 style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "10px",
-                  padding: "8px 14px",
-                  border: `1px dashed ${bulkFile ? "#ff4f00" : "#c5c0b1"}`,
+                  width: "100%",
+                  maxWidth: "300px",
+                  backgroundColor: "#fffefb",
+                  color: "#201515",
+                  border: "1px solid #c5c0b1",
                   borderRadius: "5px",
-                  backgroundColor: bulkFile ? "#fff8f5" : "#fffefb",
-                  cursor: "pointer",
-                  flex: 1,
-                  minWidth: "200px",
-                  transition: "border-color 0.15s, background-color 0.15s",
+                  padding: "8px 12px",
+                  fontFamily: "Inter, Arial, sans-serif",
+                  fontSize: "0.9375rem",
+                  outline: "none",
+                  boxSizing: "border-box",
+                }}
+              />
+              <p style={{ fontFamily: "Inter, Arial, sans-serif", fontSize: "0.75rem", color: "#939084", margin: "4px 0 0" }}>
+                Specify the grading round label (e.g. &quot;Lần 1&quot;). Used to tag submissions and export results.
+              </p>
+            </div>
+
+            {/* Step 2: Upload ZIP */}
+            <div style={{ marginBottom: "16px" }}>
+              <label style={{ display: "block", fontFamily: "Inter, Arial, sans-serif", fontSize: "0.8125rem", fontWeight: 600, color: "#36342e", marginBottom: "6px" }}>
+                Submissions ZIP
+              </label>
+              <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px",
+                    padding: "8px 14px",
+                    border: `1px dashed ${bulkFile ? "#ff4f00" : "#c5c0b1"}`,
+                    borderRadius: "5px",
+                    backgroundColor: bulkFile ? "#fff8f5" : "#fffefb",
+                    cursor: "pointer",
+                    flex: 1,
+                    minWidth: "200px",
+                    transition: "border-color 0.15s, background-color 0.15s",
+                  }}
+                >
+                  <Upload size={15} color={bulkFile ? "#ff4f00" : "#939084"} />
+                  <span style={{ fontFamily: "Inter, Arial, sans-serif", fontSize: "0.875rem", color: bulkFile ? "#ff4f00" : "#939084", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {bulkFile ? bulkFile.name : "Chọn master.zip…"}
+                  </span>
+                  {bulkFile && (
+                    <span style={{ fontFamily: "Inter, Arial, sans-serif", fontSize: "0.75rem", color: "#939084", flexShrink: 0 }}>
+                      {(bulkFile.size / 1024 / 1024).toFixed(1)} MB
+                    </span>
+                  )}
+                  <input type="file" accept=".zip" onChange={(e) => setBulkFile(e.target.files?.[0] || null)} style={{ display: "none" }} />
+                </label>
+                <button
+                  onClick={handleBulkUpload}
+                  disabled={!bulkFile || uploading}
+                  style={{ display: "inline-flex", alignItems: "center", gap: "8px", padding: "8px 16px", fontFamily: "Inter, Arial, sans-serif", fontSize: "0.875rem", fontWeight: 600, color: "#fffefb", backgroundColor: "#ff4f00", border: "1px solid #ff4f00", borderRadius: "4px", cursor: !bulkFile || uploading ? "not-allowed" : "pointer", opacity: !bulkFile || uploading ? 0.6 : 1, flexShrink: 0 }}
+                >
+                  <Upload size={15} />
+                  {uploading ? "Uploading..." : "Upload Submissions"}
+                </button>
+              </div>
+              {bulkResult && (
+                <div style={{ padding: "10px 14px", backgroundColor: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "5px", marginTop: "10px", fontFamily: "Inter, Arial, sans-serif", fontSize: "0.8125rem", color: "#166534" }}>
+                  ✓ {bulkResult}
+                </div>
+              )}
+            </div>
+
+            {/* Divider */}
+            <div style={{ height: "1px", backgroundColor: "#eceae3", margin: "20px 0" }} />
+
+            {/* Step 3: Grade Submissions */}
+            <div>
+              <h4 style={{ fontFamily: "Inter, Arial, sans-serif", fontSize: "0.9375rem", fontWeight: 600, color: "#201515", marginBottom: "8px" }}>
+                Grade Submissions
+              </h4>
+              <p style={{ fontFamily: "Inter, Arial, sans-serif", fontSize: "0.8125rem", color: "#939084", marginBottom: "12px" }}>
+                Start the grading worker for all pending submissions in round <strong style={{ color: "#201515" }}>&quot;{gradingRound}&quot;</strong>.
+              </p>
+
+              {exportError && (
+                <div style={{ padding: "10px 14px", backgroundColor: exportError.includes("success") ? "#f0fdf4" : "#fef2f2", border: `1px solid ${exportError.includes("success") ? "#bbf7d0" : "#fecaca"}`, borderRadius: "5px", marginBottom: "12px", fontFamily: "Inter, Arial, sans-serif", fontSize: "0.8125rem", color: exportError.includes("success") ? "#166534" : "#dc2626" }}>
+                  {exportError}
+                </div>
+              )}
+
+              <button
+                onClick={handleTriggerGrading}
+                disabled={exporting || !gradingRound.trim()}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "10px 20px",
+                  fontFamily: "Inter, Arial, sans-serif",
+                  fontSize: "0.9375rem",
+                  fontWeight: 600,
+                  color: "#fffefb",
+                  backgroundColor: (exporting || !gradingRound.trim()) ? "#939084" : "#16a34a",
+                  border: `1px solid ${(exporting || !gradingRound.trim()) ? "#939084" : "#16a34a"}`,
+                  borderRadius: "4px",
+                  cursor: (exporting || !gradingRound.trim()) ? "not-allowed" : "pointer",
+                  opacity: (exporting || !gradingRound.trim()) ? 0.6 : 1,
                 }}
               >
-                <Upload size={15} color={bulkFile ? "#ff4f00" : "#939084"} />
-                <span style={{ fontFamily: "Inter, Arial, sans-serif", fontSize: "0.875rem", color: bulkFile ? "#ff4f00" : "#939084", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {bulkFile ? bulkFile.name : "Chọn master.zip…"}
-                </span>
-                {bulkFile && (
-                  <span style={{ fontFamily: "Inter, Arial, sans-serif", fontSize: "0.75rem", color: "#939084", flexShrink: 0 }}>
-                    {(bulkFile.size / 1024 / 1024).toFixed(1)} MB
-                  </span>
-                )}
-                <input type="file" accept=".zip" onChange={(e) => setBulkFile(e.target.files?.[0] || null)} style={{ display: "none" }} />
-              </label>
-              <button
-                onClick={handleBulkUpload}
-                disabled={!bulkFile || uploading}
-                style={{ display: "inline-flex", alignItems: "center", gap: "8px", padding: "8px 16px", fontFamily: "Inter, Arial, sans-serif", fontSize: "0.875rem", fontWeight: 600, color: "#fffefb", backgroundColor: "#ff4f00", border: "1px solid #ff4f00", borderRadius: "4px", cursor: !bulkFile || uploading ? "not-allowed" : "pointer", opacity: !bulkFile || uploading ? 0.6 : 1, flexShrink: 0 }}
-              >
-                <Upload size={15} />
-                {uploading ? "Uploading..." : "Bulk Upload"}
+                {exporting ? "Grading..." : "▶ Grade Submissions"}
               </button>
-              {bulkResult && (
-                <span style={{ fontFamily: "Inter, Arial, sans-serif", fontSize: "0.875rem", color: "#166534" }}>{bulkResult}</span>
-              )}
             </div>
           </div>
 
@@ -1014,7 +1093,7 @@ export default function AssignmentDetailPage() {
           ) : submissions.length === 0 ? (
             <EmptyState
               title="No submissions yet"
-              description="Upload submissions via ZIP file or trigger grading from the setup tab."
+              description="Upload submissions via the section above and click Grade Submissions."
             />
           ) : (
             <Table

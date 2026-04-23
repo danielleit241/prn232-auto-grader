@@ -20,15 +20,54 @@ export default function QuestionDetailPage() {
   const [error, setError] = React.useState<string | null>(null);
 
   const [showCreate, setShowCreate] = React.useState(false);
-  const [newTestCase, setNewTestCase] = React.useState<CreateTestCaseRequest>({
-    name: "",
-    httpMethod: "GET",
-    urlTemplate: "",
-    expectedStatus: 200,
-    score: 1,
-  });
+  const [jsonInput, setJsonInput] = React.useState('');
+  const [jsonError, setJsonError] = React.useState<string | null>(null);
   const [creating, setCreating] = React.useState(false);
   const [deleting, setDeleting] = React.useState<string | null>(null);
+
+  // Score tracking
+  const totalUsedScore = testCases.reduce((sum, tc) => sum + tc.score, 0);
+  const maxScore = question?.maxScore ?? 0;
+  const remainingScore = maxScore - totalUsedScore;
+  const scorePercentage = maxScore > 0 ? Math.min((totalUsedScore / maxScore) * 100, 100) : 0;
+  const isOverBudget = totalUsedScore > maxScore;
+  const isExactMatch = totalUsedScore === maxScore;
+
+  // JSON template for placeholder – differs by question type
+  const isRazor = question?.type === 1;
+
+  const jsonPlaceholderApi = `// Single test case (API):
+{
+  "httpMethod": "GET",
+  "urlTemplate": "/api/students",
+  "expectedStatus": 200,
+  "expectedBody": [ ... ],
+  "score": 1
+}
+
+// Or array of test cases:
+[
+  { "httpMethod": "GET", "urlTemplate": "/api/students", "expectedStatus": 200, "score": 1 },
+  { "httpMethod": "POST", "urlTemplate": "/api/students", "expectedStatus": 201, "requestBody": { ... }, "score": 1 }
+]`;
+
+  const jsonPlaceholderRazor = `// Single test case (Razor):
+{
+  "httpMethod": "GET",
+  "urlTemplate": "/Instructor",
+  "expectedStatus": 200,
+  "elementId": "ip_instructorName",
+  "score": 1
+}
+
+// Or array of test cases:
+[
+  { "httpMethod": "GET", "urlTemplate": "/Instructor", "expectedStatus": 200, "elementId": "ip_instructorName", "score": 1 },
+  { "httpMethod": "GET", "urlTemplate": "/Instructor", "expectedStatus": 200, "selector": "table tbody tr", "selectorMinCount": 5, "score": 1 },
+  { "httpMethod": "GET", "urlTemplate": "/Instructor/1", "expectedStatus": 200, "elementId": "span_1", "elementText": "1", "score": 1 }
+]`;
+
+  const jsonPlaceholder = isRazor ? jsonPlaceholderRazor : jsonPlaceholderApi;
 
   React.useEffect(() => {
     loadData();
@@ -64,25 +103,95 @@ export default function QuestionDetailPage() {
     }
   };
 
-  const handleCreateTestCase = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newTestCase.name.trim() || !newTestCase.urlTemplate.trim()) return;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const mapJsonToRequest = (obj: any): CreateTestCaseRequest => {
+    const method = obj.httpMethod || obj.method || "GET";
+    const url = obj.urlTemplate || obj.url || "";
+    return {
+      name: obj.name || `${method} ${url}`,
+      httpMethod: method,
+      urlTemplate: url,
+      expectedStatus: obj.expectedStatus ?? obj.status ?? 200,
+      expectJson: obj.expectedBody !== undefined
+        ? JSON.stringify(obj.expectedBody)
+        : obj.expectJson ?? undefined,
+      inputJson: obj.requestBody !== undefined
+        ? JSON.stringify(obj.requestBody)
+        : obj.inputJson ?? undefined,
+      score: obj.score ?? 1,
+      elementId: obj.elementId,
+      elementText: obj.elementText,
+      selector: obj.selector,
+      selectorMinCount: obj.selectorMinCount,
+    };
+  };
+
+  const handleCreateFromJson = async () => {
+    setJsonError(null);
+    const trimmed = jsonInput.trim();
+    if (!trimmed) {
+      setJsonError("Please enter JSON for the test case(s).");
+      return;
+    }
+
+    // Parse JSON
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch {
+      setJsonError("Invalid JSON. Please check syntax.");
+      return;
+    }
+
+    // Normalize to array
+    const items = Array.isArray(parsed) ? parsed : [parsed];
+    if (items.length === 0) {
+      setJsonError("JSON array is empty.");
+      return;
+    }
+
+    // Map to CreateTestCaseRequest[]
+    const requests: CreateTestCaseRequest[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (typeof item !== "object" || item === null) {
+        setJsonError(`Item at index ${i} is not a valid object.`);
+        return;
+      }
+      const req = mapJsonToRequest(item);
+      if (!req.urlTemplate) {
+        setJsonError(`Item ${i + 1}: "urlTemplate" is required.`);
+        return;
+      }
+      if (req.score <= 0) {
+        setJsonError(`Item ${i + 1}: "score" must be > 0.`);
+        return;
+      }
+      requests.push(req);
+    }
+
+    // Validate total score
+    const addedScore = requests.reduce((s, r) => s + r.score, 0);
+    if (addedScore + totalUsedScore > maxScore) {
+      setJsonError(
+        `Total score of new test cases (${addedScore} pts) would exceed the max score (${maxScore}). Remaining budget: ${remainingScore} pts.`
+      );
+      return;
+    }
+
     try {
       setCreating(true);
-      const res = await api.createTestCases(questionId, [newTestCase]);
+      const res = await api.createTestCases(questionId, requests);
       if (res.status && res.data) {
         setTestCases([...testCases, ...res.data]);
         setShowCreate(false);
-        setNewTestCase({
-          name: "",
-          httpMethod: "GET",
-          urlTemplate: "",
-          expectedStatus: 200,
-          score: 1,
-        });
+        setJsonInput('');
+        setJsonError(null);
+      } else {
+        setJsonError(res.message || "Failed to create test case(s).");
       }
     } catch {
-      // ignore
+      setJsonError("Network error creating test case(s).");
     } finally {
       setCreating(false);
     }
@@ -155,7 +264,7 @@ export default function QuestionDetailPage() {
       </div>
 
       {/* Page Header */}
-      <div style={{ marginBottom: "40px" }}>
+      <div style={{ marginBottom: "32px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
           <StatusBadge
             status={question.type === 0 ? "Api" : "Razor"}
@@ -194,7 +303,72 @@ export default function QuestionDetailPage() {
         </div>
       </div>
 
-      {/* Test Cases */}
+      {/* ===== Score Tracker ===== */}
+      <div
+        style={{
+          backgroundColor: isOverBudget ? "#fef2f2" : isExactMatch ? "#f0fdf4" : "#fffdf9",
+          border: `1px solid ${isOverBudget ? "#fecaca" : isExactMatch ? "#bbf7d0" : "#eceae3"}`,
+          borderRadius: "8px",
+          padding: "20px 24px",
+          marginBottom: "24px",
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+          <span style={{ fontFamily: "Inter, Arial, sans-serif", fontSize: "0.875rem", fontWeight: 600, color: "#36342e" }}>
+            Score Allocation
+          </span>
+          <div style={{ display: "flex", gap: "16px", fontFamily: "Inter, Arial, sans-serif", fontSize: "0.8125rem" }}>
+            <span style={{ color: "#939084" }}>
+              Used: <strong style={{ color: isOverBudget ? "#dc2626" : "#201515" }}>{totalUsedScore}</strong>
+            </span>
+            <span style={{ color: "#939084" }}>
+              Remaining: <strong style={{ color: remainingScore < 0 ? "#dc2626" : remainingScore === 0 ? "#166534" : "#c2410c" }}>{remainingScore}</strong>
+            </span>
+            <span style={{ color: "#939084" }}>
+              Max: <strong style={{ color: "#201515" }}>{maxScore}</strong>
+            </span>
+          </div>
+        </div>
+
+        {/* Progress Bar */}
+        <div
+          style={{
+            height: "8px",
+            backgroundColor: "#eceae3",
+            borderRadius: "4px",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              height: "100%",
+              width: `${scorePercentage}%`,
+              backgroundColor: isOverBudget ? "#dc2626" : isExactMatch ? "#16a34a" : "#ff4f00",
+              borderRadius: "4px",
+              transition: "width 0.3s ease, background-color 0.3s ease",
+            }}
+          />
+        </div>
+
+        {/* Status messages */}
+        {isOverBudget && (
+          <div style={{ marginTop: "10px", fontFamily: "Inter, Arial, sans-serif", fontSize: "0.8125rem", color: "#dc2626", fontWeight: 600 }}>
+            ⚠ Total score ({totalUsedScore}) exceeds max score ({maxScore}). Remove or reduce test case scores.
+          </div>
+        )}
+        {!isOverBudget && !isExactMatch && totalUsedScore > 0 && (
+          <div style={{ marginTop: "10px", fontFamily: "Inter, Arial, sans-serif", fontSize: "0.8125rem", color: "#c2410c", fontWeight: 500 }}>
+            ℹ Total must equal max score ({maxScore}) before grading. {remainingScore} pts remaining.
+          </div>
+        )}
+        {isExactMatch && testCases.length > 0 && (
+          <div style={{ marginTop: "10px", fontFamily: "Inter, Arial, sans-serif", fontSize: "0.8125rem", color: "#166534", fontWeight: 600 }}>
+            ✓ Score allocation complete — all {maxScore} pts assigned.
+          </div>
+        )}
+      </div>
+
+      {/* Test Cases Header */}
       <div
         style={{
           display: "flex",
@@ -216,16 +390,18 @@ export default function QuestionDetailPage() {
         </h2>
         <button
           onClick={() => setShowCreate(true)}
+          disabled={remainingScore <= 0}
           style={{
             padding: "8px 16px",
             fontFamily: "Inter, Arial, sans-serif",
             fontSize: "0.875rem",
             fontWeight: 600,
             color: "#fffefb",
-            backgroundColor: "#ff4f00",
-            border: "1px solid #ff4f00",
+            backgroundColor: remainingScore <= 0 ? "#939084" : "#ff4f00",
+            border: `1px solid ${remainingScore <= 0 ? "#939084" : "#ff4f00"}`,
             borderRadius: "4px",
-            cursor: "pointer",
+            cursor: remainingScore <= 0 ? "not-allowed" : "pointer",
+            opacity: remainingScore <= 0 ? 0.6 : 1,
           }}
         >
           + New Test Case
@@ -233,8 +409,7 @@ export default function QuestionDetailPage() {
       </div>
 
       {showCreate && (
-        <form
-          onSubmit={handleCreateTestCase}
+        <div
           style={{
             backgroundColor: "#fffefb",
             border: "1px solid #c5c0b1",
@@ -252,166 +427,26 @@ export default function QuestionDetailPage() {
               marginBottom: "16px",
             }}
           >
-            Add Test Case
+            Add Test Case via JSON
           </h3>
+
+          {/* Score budget reminder */}
           <div
             style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 120px 100px 80px",
-              gap: "12px",
+              padding: "10px 14px",
+              backgroundColor: "#fff8f0",
+              border: "1px solid #fed7aa",
+              borderRadius: "5px",
               marginBottom: "16px",
+              fontFamily: "Inter, Arial, sans-serif",
+              fontSize: "0.8125rem",
+              color: "#c2410c",
             }}
           >
-            <div>
-              <label
-                style={{
-                  display: "block",
-                  fontFamily: "Inter, Arial, sans-serif",
-                  fontSize: "0.75rem",
-                  fontWeight: 600,
-                  color: "#939084",
-                  marginBottom: "4px",
-                }}
-              >
-                Name
-              </label>
-              <input
-                type="text"
-                required
-                placeholder="e.g. GET /api/students"
-                value={newTestCase.name}
-                onChange={(e) =>
-                  setNewTestCase({ ...newTestCase, name: e.target.value })
-                }
-                style={{
-                  width: "100%",
-                  backgroundColor: "#fffefb",
-                  color: "#201515",
-                  border: "1px solid #c5c0b1",
-                  borderRadius: "5px",
-                  padding: "8px 12px",
-                  fontFamily: "Inter, Arial, sans-serif",
-                  fontSize: "0.9375rem",
-                  outline: "none",
-                }}
-                onFocus={(e) => { e.target.style.borderColor = "#ff4f00"; }}
-                onBlur={(e) => { e.target.style.borderColor = "#c5c0b1"; }}
-              />
-            </div>
-            <div>
-              <label
-                style={{
-                  display: "block",
-                  fontFamily: "Inter, Arial, sans-serif",
-                  fontSize: "0.75rem",
-                  fontWeight: 600,
-                  color: "#939084",
-                  marginBottom: "4px",
-                }}
-              >
-                Method
-              </label>
-              <select
-                value={newTestCase.httpMethod}
-                onChange={(e) =>
-                  setNewTestCase({ ...newTestCase, httpMethod: e.target.value })
-                }
-                style={{
-                  width: "100%",
-                  backgroundColor: "#fffefb",
-                  color: "#201515",
-                  border: "1px solid #c5c0b1",
-                  borderRadius: "5px",
-                  padding: "8px 12px",
-                  fontFamily: "Inter, Arial, sans-serif",
-                  fontSize: "0.9375rem",
-                  outline: "none",
-                }}
-              >
-                <option value="GET">GET</option>
-                <option value="POST">POST</option>
-                <option value="PUT">PUT</option>
-                <option value="DELETE">DELETE</option>
-              </select>
-            </div>
-            <div>
-              <label
-                style={{
-                  display: "block",
-                  fontFamily: "Inter, Arial, sans-serif",
-                  fontSize: "0.75rem",
-                  fontWeight: 600,
-                  color: "#939084",
-                  marginBottom: "4px",
-                }}
-              >
-                Status
-              </label>
-              <input
-                type="number"
-                value={newTestCase.expectedStatus}
-                onChange={(e) =>
-                  setNewTestCase({
-                    ...newTestCase,
-                    expectedStatus: Number(e.target.value),
-                  })
-                }
-                style={{
-                  width: "100%",
-                  backgroundColor: "#fffefb",
-                  color: "#201515",
-                  border: "1px solid #c5c0b1",
-                  borderRadius: "5px",
-                  padding: "8px 12px",
-                  fontFamily: "Inter, Arial, sans-serif",
-                  fontSize: "0.9375rem",
-                  outline: "none",
-                }}
-                onFocus={(e) => { e.target.style.borderColor = "#ff4f00"; }}
-                onBlur={(e) => { e.target.style.borderColor = "#c5c0b1"; }}
-              />
-            </div>
-            <div>
-              <label
-                style={{
-                  display: "block",
-                  fontFamily: "Inter, Arial, sans-serif",
-                  fontSize: "0.75rem",
-                  fontWeight: 600,
-                  color: "#939084",
-                  marginBottom: "4px",
-                }}
-              >
-                Score
-              </label>
-              <input
-                type="number"
-                required
-                min={1}
-                value={newTestCase.score}
-                onChange={(e) =>
-                  setNewTestCase({
-                    ...newTestCase,
-                    score: Number(e.target.value),
-                  })
-                }
-                style={{
-                  width: "100%",
-                  backgroundColor: "#fffefb",
-                  color: "#201515",
-                  border: "1px solid #c5c0b1",
-                  borderRadius: "5px",
-                  padding: "8px 12px",
-                  fontFamily: "Inter, Arial, sans-serif",
-                  fontSize: "0.9375rem",
-                  outline: "none",
-                }}
-                onFocus={(e) => { e.target.style.borderColor = "#ff4f00"; }}
-                onBlur={(e) => { e.target.style.borderColor = "#c5c0b1"; }}
-              />
-            </div>
+            Remaining score budget: <strong>{remainingScore}</strong> pts &middot; Paste a single JSON object or an array of test cases
           </div>
 
+          {/* JSON textarea */}
           <div style={{ marginBottom: "16px" }}>
             <label
               style={{
@@ -420,57 +455,129 @@ export default function QuestionDetailPage() {
                 fontSize: "0.75rem",
                 fontWeight: 600,
                 color: "#939084",
-                marginBottom: "4px",
+                marginBottom: "6px",
               }}
             >
-              URL Template
+              JSON Input
             </label>
-            <input
-              type="text"
-              required
-              placeholder="e.g. /api/students"
-              value={newTestCase.urlTemplate}
-              onChange={(e) =>
-                setNewTestCase({ ...newTestCase, urlTemplate: e.target.value })
-              }
+            <textarea
+              value={jsonInput}
+              onChange={(e) => {
+                setJsonInput(e.target.value);
+                if (jsonError) setJsonError(null);
+              }}
+              placeholder={jsonPlaceholder}
+              spellCheck={false}
               style={{
                 width: "100%",
-                backgroundColor: "#fffefb",
-                color: "#201515",
-                border: "1px solid #c5c0b1",
-                borderRadius: "5px",
-                padding: "8px 12px",
-                fontFamily: "Inter, Arial, sans-serif",
-                fontSize: "0.9375rem",
+                minHeight: "280px",
+                backgroundColor: "#1e1e1e",
+                color: "#d4d4d4",
+                border: jsonError ? "2px solid #dc2626" : "1px solid #c5c0b1",
+                borderRadius: "6px",
+                padding: "16px",
+                fontFamily: "'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace",
+                fontSize: "0.8125rem",
+                lineHeight: "1.6",
                 outline: "none",
+                boxSizing: "border-box",
+                resize: "vertical",
+                tabSize: 2,
               }}
-              onFocus={(e) => { e.target.style.borderColor = "#ff4f00"; }}
-              onBlur={(e) => { e.target.style.borderColor = "#c5c0b1"; }}
+              onFocus={(e) => { if (!jsonError) e.target.style.borderColor = "#ff4f00"; }}
+              onBlur={(e) => { if (!jsonError) e.target.style.borderColor = "#c5c0b1"; }}
             />
           </div>
 
+          {/* JSON error */}
+          {jsonError && (
+            <div
+              style={{
+                padding: "10px 14px",
+                backgroundColor: "#fef2f2",
+                border: "1px solid #fecaca",
+                borderRadius: "5px",
+                marginBottom: "16px",
+                fontFamily: "Inter, Arial, sans-serif",
+                fontSize: "0.8125rem",
+                color: "#dc2626",
+                fontWeight: 500,
+              }}
+            >
+              ⚠ {jsonError}
+            </div>
+          )}
+
+          {/* Supported fields hint */}
+          <details style={{ marginBottom: "16px" }}>
+            <summary
+              style={{
+                fontFamily: "Inter, Arial, sans-serif",
+                fontSize: "0.75rem",
+                fontWeight: 600,
+                color: "#939084",
+                cursor: "pointer",
+                userSelect: "none",
+              }}
+            >
+              Supported fields reference ({isRazor ? "Razor" : "API"})
+            </summary>
+            <div
+              style={{
+                marginTop: "8px",
+                padding: "12px 16px",
+                backgroundColor: "#f5f4f0",
+                borderRadius: "5px",
+                fontFamily: "'Cascadia Code', 'Consolas', monospace",
+                fontSize: "0.75rem",
+                lineHeight: "1.8",
+                color: "#36342e",
+              }}
+            >
+              <div><strong>httpMethod</strong> — GET, POST, PUT, DELETE <em>(default: GET)</em></div>
+              <div><strong>urlTemplate</strong> — e.g. {isRazor ? "/Instructor" : "/api/students"} <em>(required)</em></div>
+              <div><strong>expectedStatus</strong> — HTTP status code <em>(default: 200)</em></div>
+              {isRazor ? (
+                <>
+                  <div><strong>elementId</strong> — HTML element ID to check for existence</div>
+                  <div><strong>elementText</strong> — expected text content of the element</div>
+                  <div><strong>selector</strong> — CSS selector (e.g. &quot;table tbody tr&quot;)</div>
+                  <div><strong>selectorMinCount</strong> — minimum number of matching elements</div>
+                </>
+              ) : (
+                <>
+                  <div><strong>expectedBody</strong> — expected response body (object or array)</div>
+                  <div><strong>requestBody</strong> — request body for POST/PUT</div>
+                </>
+              )}
+              <div><strong>score</strong> — points for this test case <em>(default: 1)</em></div>
+              <div><strong>name</strong> — display name <em>(auto: METHOD /url)</em></div>
+            </div>
+          </details>
+
           <div style={{ display: "flex", gap: "8px" }}>
             <button
-              type="submit"
-              disabled={creating}
+              type="button"
+              onClick={handleCreateFromJson}
+              disabled={creating || !jsonInput.trim()}
               style={{
                 padding: "8px 16px",
                 fontFamily: "Inter, Arial, sans-serif",
                 fontSize: "0.875rem",
                 fontWeight: 600,
                 color: "#fffefb",
-                backgroundColor: "#ff4f00",
-                border: "1px solid #ff4f00",
+                backgroundColor: (creating || !jsonInput.trim()) ? "#939084" : "#ff4f00",
+                border: `1px solid ${(creating || !jsonInput.trim()) ? "#939084" : "#ff4f00"}`,
                 borderRadius: "4px",
-                cursor: creating ? "not-allowed" : "pointer",
-                opacity: creating ? 0.6 : 1,
+                cursor: (creating || !jsonInput.trim()) ? "not-allowed" : "pointer",
+                opacity: (creating || !jsonInput.trim()) ? 0.6 : 1,
               }}
             >
-              {creating ? "Creating..." : "Add Test Case"}
+              {creating ? "Creating..." : "Add Test Case(s)"}
             </button>
             <button
               type="button"
-              onClick={() => setShowCreate(false)}
+              onClick={() => { setShowCreate(false); setJsonError(null); setJsonInput(''); }}
               style={{
                 padding: "8px 16px",
                 fontFamily: "Inter, Arial, sans-serif",
@@ -486,7 +593,7 @@ export default function QuestionDetailPage() {
               Cancel
             </button>
           </div>
-        </form>
+        </div>
       )}
 
       {testCases.length === 0 ? (
@@ -501,7 +608,7 @@ export default function QuestionDetailPage() {
             gap: "12px",
           }}
         >
-          {testCases.map((tc) => (
+          {testCases.map((tc, idx) => (
             <div
               key={tc.id}
               style={{
@@ -527,6 +634,23 @@ export default function QuestionDetailPage() {
                       marginBottom: "4px",
                     }}
                   >
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        width: "22px",
+                        height: "22px",
+                        borderRadius: "50%",
+                        backgroundColor: "#eceae3",
+                        fontFamily: "Inter, Arial, sans-serif",
+                        fontSize: "0.6875rem",
+                        fontWeight: 700,
+                        color: "#36342e",
+                      }}
+                    >
+                      {idx + 1}
+                    </span>
                     <span
                       style={{
                         display: "inline-block",
@@ -586,7 +710,8 @@ export default function QuestionDetailPage() {
                       color: "#939084",
                     }}
                   >
-                    Status: {tc.expectedStatus} &middot; {tc.score} pts
+                    Status: {tc.expectedStatus} &middot;{" "}
+                    <strong style={{ color: "#ff4f00" }}>{tc.score} pts</strong>
                   </span>
                 </div>
                 <button

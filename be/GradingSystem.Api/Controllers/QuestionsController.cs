@@ -27,4 +27,11 @@ public class QuestionsController(IQuestionService questionService) : BaseApiCont
         var questions = await questionService.GetByAssignmentIdAsync(assignmentId, ct);
         return Ok(questions);
     }
+
+    [HttpDelete("questions/{questionId:guid}")]
+    public async Task<IActionResult> DeleteAsync(Guid questionId, CancellationToken ct)
+    {
+        var deleted = await questionService.DeleteAsync(questionId, ct);
+        return Ok(deleted, "Question deleted.");
+    }
 }
