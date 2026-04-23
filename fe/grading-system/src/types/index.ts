@@ -115,6 +115,7 @@ export interface QuestionResult {
   passed?: boolean;
   output?: string;
   detail?: string;
+  testCaseResults?: TestCaseResult[];
   adjustedScore?: number;
   adjustReason?: string;
   adjustedBy?: string;

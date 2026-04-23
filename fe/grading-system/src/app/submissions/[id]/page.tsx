@@ -397,7 +397,7 @@ export default function SubmissionDetailPage() {
                     <span>
                       Test Cases:{" "}
                       <strong>
-                        {result.passedTestCases ?? 0} / {result.totalTestCases ?? 0}
+                        {result.passedTestCases ?? result.testCaseResults?.filter(tc => tc.pass).length ?? 0} / {result.totalTestCases ?? result.testCaseResults?.length ?? 0}
                       </strong>
                     </span>
                     {result.adjustReason && (
@@ -406,6 +406,161 @@ export default function SubmissionDetailPage() {
                       </span>
                     )}
                   </div>
+
+                  {/* Test Case Details */}
+                  {result.testCaseResults && result.testCaseResults.length > 0 && (
+                    <details
+                      style={{
+                        borderTop: "1px solid #eceae3",
+                      }}
+                    >
+                      <summary
+                        style={{
+                          padding: "12px 20px",
+                          fontFamily: "Inter, Arial, sans-serif",
+                          fontSize: "0.8125rem",
+                          fontWeight: 600,
+                          color: "#939084",
+                          cursor: "pointer",
+                          userSelect: "none",
+                          backgroundColor: "#fffdf9",
+                        }}
+                      >
+                        View test case details ({result.testCaseResults.length} test cases)
+                      </summary>
+                      <div style={{ padding: "0" }}>
+                        {result.testCaseResults.map((tc, idx) => (
+                          <div
+                            key={tc.testCaseId || idx}
+                            style={{
+                              padding: "12px 20px",
+                              borderTop: idx > 0 ? "1px solid #eceae3" : "none",
+                              backgroundColor: tc.pass ? "#fafff9" : "#fffaf8",
+                            }}
+                          >
+                            {/* Test case header row */}
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "10px",
+                                marginBottom: tc.failReason ? "8px" : "0",
+                              }}
+                            >
+                              {/* Pass/Fail indicator */}
+                              <span
+                                style={{
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  width: "20px",
+                                  height: "20px",
+                                  borderRadius: "50%",
+                                  backgroundColor: tc.pass ? "#16a34a" : "#dc2626",
+                                  color: "#fff",
+                                  fontSize: "0.6875rem",
+                                  fontWeight: 700,
+                                  flexShrink: 0,
+                                }}
+                              >
+                                {tc.pass ? "✓" : "✗"}
+                              </span>
+
+                              {/* Method badge */}
+                              <span
+                                style={{
+                                  display: "inline-block",
+                                  padding: "1px 6px",
+                                  borderRadius: "3px",
+                                  fontFamily: "Inter, Arial, sans-serif",
+                                  fontSize: "0.6875rem",
+                                  fontWeight: 700,
+                                  backgroundColor:
+                                    tc.httpMethod === "GET"
+                                      ? "#f0f9ff"
+                                      : tc.httpMethod === "POST"
+                                        ? "#f0fdf4"
+                                        : tc.httpMethod === "PUT"
+                                          ? "#fff8f0"
+                                          : "#fef2f2",
+                                  color:
+                                    tc.httpMethod === "GET"
+                                      ? "#0369a1"
+                                      : tc.httpMethod === "POST"
+                                        ? "#166534"
+                                        : tc.httpMethod === "PUT"
+                                          ? "#c2410c"
+                                          : "#dc2626",
+                                }}
+                              >
+                                {tc.httpMethod}
+                              </span>
+
+                              {/* URL */}
+                              <code
+                                style={{
+                                  fontFamily: "monospace",
+                                  fontSize: "0.8125rem",
+                                  color: "#36342e",
+                                  flex: 1,
+                                }}
+                              >
+                                {tc.url}
+                              </code>
+
+                              {/* Name */}
+                              {tc.name && (
+                                <span
+                                  style={{
+                                    fontFamily: "Inter, Arial, sans-serif",
+                                    fontSize: "0.75rem",
+                                    color: "#939084",
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  {tc.name}
+                                </span>
+                              )}
+
+                              {/* Score */}
+                              <span
+                                style={{
+                                  fontFamily: "Inter, Arial, sans-serif",
+                                  fontSize: "0.8125rem",
+                                  fontWeight: 600,
+                                  color: tc.pass ? "#166534" : "#dc2626",
+                                  flexShrink: 0,
+                                }}
+                              >
+                                {tc.awardedScore} pts
+                              </span>
+                            </div>
+
+                            {/* Fail reason */}
+                            {tc.failReason && (
+                              <div
+                                style={{
+                                  marginLeft: "30px",
+                                  padding: "8px 12px",
+                                  backgroundColor: "#fef2f2",
+                                  border: "1px solid #fecaca",
+                                  borderRadius: "4px",
+                                  fontFamily: "'Cascadia Code', 'Consolas', monospace",
+                                  fontSize: "0.75rem",
+                                  lineHeight: "1.5",
+                                  color: "#991b1b",
+                                  whiteSpace: "pre-wrap",
+                                  wordBreak: "break-word",
+                                }}
+                              >
+                                {tc.failReason}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  )}
                 </div>
               ))}
             </div>
