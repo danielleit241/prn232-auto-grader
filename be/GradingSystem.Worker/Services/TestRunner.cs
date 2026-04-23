@@ -5,14 +5,18 @@ using System.Text.Json.Nodes;
 using GradingSystem.Application.Common;
 using GradingSystem.Application.Interfaces;
 using GradingSystem.Domain.Entities;
+using GradingSystem.Worker.Options;
 using HtmlAgilityPack;
+using Microsoft.Extensions.Options;
 
 namespace GradingSystem.Worker.Services;
 
-public class TestRunner(ILogger<TestRunner> logger)
+public class TestRunner(ILogger<TestRunner> logger, IOptions<WorkerOptions> workerOpts)
 {
     private static readonly JsonSerializerOptions _jsonOpts =
         new(JsonSerializerDefaults.Web); // PropertyNameCaseInsensitive = true, no AOT issue
+
+    private readonly NewmanLaunch? _newman = ResolveNewman(workerOpts.Value, logger);
 
     public async Task RunAsync(GradingJob job, StudentContext ctx, IUnitOfWork uow, CancellationToken ct)
     {
@@ -157,13 +161,22 @@ public class TestRunner(ILogger<TestRunner> logger)
 
         try
         {
+            if (_newman is null)
+            {
+                const string hint =
+                    "Newman CLI not found. Install: npm install -g newman, ensure Node is on PATH, or set Worker:NewmanExecutable to the full path of newman.cmd.";
+                return testCases.Select(tc =>
+                        FailResult(tc, $"http://localhost:{port}{tc.UrlTemplate}", hint))
+                    .ToList();
+            }
+
             var collection = BuildPostmanCollection(testCases, port);
             await File.WriteAllTextAsync(collectionPath, collection, ct);
 
-            var (exitCode, stdout, stderr) = await RunProcessAsync(
-                "newman",
-                $"run \"{collectionPath}\" --reporters json --reporter-json-export \"{reportPath}\" --timeout-request 10000",
-                ct);
+            var tail =
+                $"run \"{collectionPath}\" --reporters json --reporter-json-export \"{reportPath}\" --timeout-request 10000";
+            var args = _newman.Value.UseNpx ? $"--yes newman {tail}" : tail;
+            var (exitCode, stdout, stderr) = await RunProcessAsync(_newman.Value.ExecutablePath, args, ct);
 
             logger.LogInformation("newman exit {Code}: {Stderr}", exitCode, stderr?.Length > 200 ? stderr[..200] : stderr);
 
@@ -604,6 +617,96 @@ public class TestRunner(ILogger<TestRunner> logger)
         if (node == null) return string.Empty;
         return string.Join("&", node.Select(kv =>
             Uri.EscapeDataString(kv.Key) + "=" + Uri.EscapeDataString(kv.Value?.ToString() ?? "")));
+    }
+
+    private readonly struct NewmanLaunch(string executablePath, bool useNpx)
+    {
+        public string ExecutablePath { get; } = executablePath;
+        public bool UseNpx { get; } = useNpx;
+    }
+
+    private static NewmanLaunch? ResolveNewman(WorkerOptions opts, ILogger logger)
+    {
+        var configured = opts.NewmanExecutable?.Trim();
+        if (!string.IsNullOrEmpty(configured))
+        {
+            if (File.Exists(configured))
+                return new NewmanLaunch(configured, false);
+            logger.LogWarning(
+                "Worker:NewmanExecutable '{Path}' not found — searching PATH / npx",
+                configured);
+        }
+
+        var fromPath = FindExecutableOnPath("newman");
+        if (fromPath is not null)
+            return new NewmanLaunch(fromPath, false);
+
+        if (OperatingSystem.IsWindows())
+        {
+            var appDataNpm = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "npm",
+                "newman.cmd");
+            if (File.Exists(appDataNpm))
+                return new NewmanLaunch(appDataNpm, false);
+        }
+
+        var npx = FindExecutableOnPath("npx");
+        if (npx is not null)
+            return new NewmanLaunch(npx, true);
+
+        if (OperatingSystem.IsWindows())
+        {
+            var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+            var npxPf = Path.Combine(programFiles, "nodejs", "npx.cmd");
+            if (File.Exists(npxPf))
+                return new NewmanLaunch(npxPf, true);
+
+            var pf86 = Environment.GetEnvironmentVariable("ProgramFiles(x86)");
+            if (!string.IsNullOrEmpty(pf86))
+            {
+                var npx86 = Path.Combine(pf86, "nodejs", "npx.cmd");
+                if (File.Exists(npx86))
+                    return new NewmanLaunch(npx86, true);
+            }
+        }
+
+        logger.LogWarning(
+            "Newman not resolved: not on PATH, not under %AppData%\\npm, and npx not found.");
+        return null;
+    }
+
+    private static string? FindExecutableOnPath(string nameWithoutExtension)
+    {
+        var path = Environment.GetEnvironmentVariable("PATH");
+        if (string.IsNullOrEmpty(path))
+            return null;
+
+        IEnumerable<string> names = OperatingSystem.IsWindows()
+            ?
+            [
+                $"{nameWithoutExtension}.exe",
+                $"{nameWithoutExtension}.cmd",
+                $"{nameWithoutExtension}.bat",
+                nameWithoutExtension,
+            ]
+            : [nameWithoutExtension, $"{nameWithoutExtension}.exe"];
+
+        foreach (var segment in path.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var dir = segment.Trim().Trim('"');
+            if (string.IsNullOrEmpty(dir))
+                continue;
+
+            foreach (var n in names)
+            {
+                var candidate = Path.Combine(dir, n);
+                if (File.Exists(candidate))
+                    return candidate;
+            }
+        }
+
+        return null;
     }
 
     private static async Task<(int exitCode, string stdout, string stderr)> RunProcessAsync(

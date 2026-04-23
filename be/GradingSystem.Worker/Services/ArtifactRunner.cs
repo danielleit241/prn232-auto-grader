@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Net.Sockets;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using GradingSystem.Domain.Entities;
 using GradingSystem.Worker.Options;
 using Microsoft.Data.SqlClient;
@@ -54,14 +56,16 @@ public partial class ArtifactRunner(
             ZipFile.ExtractToDirectory(assignment.GivenZipPath, givenRoot);
             logger.LogInformation("Extracted given API zip for job {JobId} → {Path}", job.Id, givenRoot);
 
+            StripPublishingListenConfigFromAppSettings(givenRoot);
+
             var givenDll = FindEntryDll(givenRoot);
             var givenPort = PickPort();
             var givenProcess = StartDotnet(givenDll, givenPort);
-            await WaitForPortAsync($"http://localhost:{givenPort}", givenProcess, ct);
+            await WaitForPortAsync($"http://127.0.0.1:{givenPort}", givenProcess, ct);
 
             ctx.GivenApiProcess = givenProcess;
             ctx.GivenApiPort = givenPort;
-            effectiveGivenApiBaseUrl = $"http://localhost:{givenPort}";
+            effectiveGivenApiBaseUrl = $"http://127.0.0.1:{givenPort}";
             logger.LogInformation("Given API started on port {Port} for job {JobId}", givenPort, job.Id);
         }
 
@@ -99,7 +103,7 @@ public partial class ArtifactRunner(
             var env = BuildEnv(question, dbName, effectiveGivenApiBaseUrl);
 
             var process = StartDotnet(dll, port, env);
-            await WaitForPortAsync($"http://localhost:{port}", process, ct);
+            await WaitForPortAsync($"http://127.0.0.1:{port}", process, ct);
 
             ctx.QuestionApps[question.Id] = new QuestionApp { Process = process, Port = port };
 
@@ -228,26 +232,58 @@ public partial class ArtifactRunner(
         return candidateDll;
     }
 
+    private static void StripPublishingListenConfigFromAppSettings(string rootDir)
+    {
+        foreach (var path in Directory.GetFiles(rootDir, "appsettings*.json", SearchOption.AllDirectories))
+        {
+            try
+            {
+                var text = File.ReadAllText(path);
+                if (JsonNode.Parse(text) is not JsonObject root)
+                    continue;
+
+                root.Remove("Urls");
+                root.Remove("urls");
+                root.Remove("Kestrel");
+                root.Remove("kestrel");
+
+                File.WriteAllText(
+                    path,
+                    root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+            }
+            catch
+            {
+                /* unreadable or non-object JSON — leave file as-is */
+            }
+        }
+    }
+
     private Process StartDotnet(string dll, int port, Dictionary<string, string>? env = null)
     {
-        var psi = new ProcessStartInfo("dotnet", $"\"{dll}\"")
+        // --urls wins over appsettings / hardcoded UseUrls (e.g. http://127.0.0.1:5100 in publish)
+        var bindUrl = $"http://127.0.0.1:{port}";
+        var psi = new ProcessStartInfo("dotnet", $"\"{dll}\" --urls={bindUrl}")
         {
             WorkingDirectory = Path.GetDirectoryName(dll),
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
         };
-        psi.Environment["ASPNETCORE_URLS"] = $"http://localhost:{port}";
+        psi.Environment["ASPNETCORE_URLS"] = bindUrl;
         if (env != null)
             foreach (var (k, v) in env) psi.Environment[k] = v;
 
         var process = Process.Start(psi)!;
 
-        process.OutputDataReceived += (_, _) => { };
+        process.OutputDataReceived += (_, e) =>
+        {
+            if (!string.IsNullOrWhiteSpace(e.Data))
+                logger.LogDebug("[student-stdout] {Line}", e.Data);
+        };
         process.ErrorDataReceived += (_, e) =>
         {
             if (!string.IsNullOrWhiteSpace(e.Data))
-                logger.LogDebug("[student-stderr] {Line}", e.Data);
+                logger.LogWarning("[student-stderr] {Line}", e.Data);
         };
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
@@ -288,8 +324,12 @@ public partial class ArtifactRunner(
             ct.ThrowIfCancellationRequested();
 
             if (process.HasExited)
+            {
+                // Wait briefly for async stderr/stdout readers to flush buffered output
+                await Task.Delay(300, CancellationToken.None);
                 throw new InvalidOperationException(
-                    $"Student app exited with code {process.ExitCode} before becoming ready — check stderr log above.");
+                    $"Student app exited with code {process.ExitCode} (0x{process.ExitCode:X8}) before becoming ready — see [student-stderr] lines above.");
+            }
 
             try
             {

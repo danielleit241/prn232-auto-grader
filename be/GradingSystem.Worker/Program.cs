@@ -9,7 +9,15 @@ using MassTransit;
 
 var builder = Host.CreateApplicationBuilder(args);
 
-if (string.IsNullOrWhiteSpace(builder.Configuration["Storage:BasePath"]))
+if (builder.Environment.IsProduction())
+{
+    if (string.IsNullOrWhiteSpace(builder.Configuration["Storage:BasePath"]))
+        throw new InvalidOperationException("Storage:BasePath must be configured for Production (e.g. /storage in Docker).");
+
+    if (string.IsNullOrWhiteSpace(builder.Configuration["RabbitMQ:Host"]))
+        throw new InvalidOperationException("RabbitMQ:Host must be configured for Production.");
+}
+else if (string.IsNullOrWhiteSpace(builder.Configuration["Storage:BasePath"]))
 {
     var solutionRoot = Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, ".."));
     builder.Configuration["Storage:BasePath"] = Path.Combine(solutionRoot, "storage");
