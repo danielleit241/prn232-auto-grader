@@ -3,6 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
+import { Upload, FileCode2, FileArchive, Link2, Users, Download } from "lucide-react";
 import { api } from "@/lib";
 import type { Assignment, Question, Submission, ExportJob } from "@/types";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
@@ -494,20 +495,42 @@ export default function AssignmentDetailPage() {
               </span>
             </div>
 
+            {/* SQL file upload */}
             <div style={{ marginBottom: "20px" }}>
-              <label style={{ display: "block", fontFamily: "Inter, Arial, sans-serif", fontSize: "0.875rem", fontWeight: 600, color: "#36342e", marginBottom: "8px" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: "6px", fontFamily: "Inter, Arial, sans-serif", fontSize: "0.875rem", fontWeight: 600, color: "#36342e", marginBottom: "8px" }}>
+                <FileCode2 size={15} color="#939084" />
                 Database SQL (.sql)
               </label>
-              <input
-                type="file"
-                accept=".sql"
-                onChange={(e) => setSqlFile(e.target.files?.[0] || null)}
-                style={{ fontFamily: "Inter, Arial, sans-serif", fontSize: "0.875rem" }}
-              />
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px",
+                  padding: "10px 14px",
+                  border: `1px dashed ${sqlFile ? "#ff4f00" : "#c5c0b1"}`,
+                  borderRadius: "5px",
+                  backgroundColor: sqlFile ? "#fff8f5" : "#fffefb",
+                  cursor: "pointer",
+                  transition: "border-color 0.15s, background-color 0.15s",
+                }}
+              >
+                <Upload size={16} color={sqlFile ? "#ff4f00" : "#939084"} />
+                <span style={{ fontFamily: "Inter, Arial, sans-serif", fontSize: "0.9375rem", color: sqlFile ? "#ff4f00" : "#939084", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {sqlFile ? sqlFile.name : "Chọn file .sql…"}
+                </span>
+                {sqlFile && (
+                  <span style={{ fontFamily: "Inter, Arial, sans-serif", fontSize: "0.75rem", color: "#939084", flexShrink: 0 }}>
+                    {(sqlFile.size / 1024).toFixed(1)} KB
+                  </span>
+                )}
+                <input type="file" accept=".sql" onChange={(e) => setSqlFile(e.target.files?.[0] || null)} style={{ display: "none" }} />
+              </label>
             </div>
 
+            {/* Given API Base URL */}
             <div style={{ marginBottom: "20px" }}>
-              <label style={{ display: "block", fontFamily: "Inter, Arial, sans-serif", fontSize: "0.875rem", fontWeight: 600, color: "#36342e", marginBottom: "8px" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: "6px", fontFamily: "Inter, Arial, sans-serif", fontSize: "0.875rem", fontWeight: 600, color: "#36342e", marginBottom: "8px" }}>
+                <Link2 size={15} color="#939084" />
                 Given API Base URL
               </label>
               <input
@@ -515,29 +538,58 @@ export default function AssignmentDetailPage() {
                 value={givenApiBaseUrl}
                 onChange={(e) => setGivenApiBaseUrl(e.target.value)}
                 placeholder="e.g. https://api.example.com"
-                style={{ width: "100%", backgroundColor: "#fffefb", color: "#201515", border: "1px solid #c5c0b1", borderRadius: "5px", padding: "10px 14px", fontFamily: "Inter, Arial, sans-serif", fontSize: "1rem", outline: "none" }}
+                style={{ width: "100%", backgroundColor: "#fffefb", color: "#201515", border: "1px solid #c5c0b1", borderRadius: "5px", padding: "10px 14px", fontFamily: "Inter, Arial, sans-serif", fontSize: "1rem", outline: "none", boxSizing: "border-box" }}
               />
             </div>
 
+            {/* Given ZIP upload */}
             <div style={{ marginBottom: "24px" }}>
-              <label style={{ display: "block", fontFamily: "Inter, Arial, sans-serif", fontSize: "0.875rem", fontWeight: 600, color: "#36342e", marginBottom: "4px" }}>
-                Given API Source ZIP (.zip)
+              <label style={{ display: "flex", alignItems: "center", gap: "6px", fontFamily: "Inter, Arial, sans-serif", fontSize: "0.875rem", fontWeight: 600, color: "#36342e", marginBottom: "6px" }}>
+                <FileArchive size={15} color="#939084" />
+                Given API ZIP
+                <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontWeight: 400, color: "#939084", fontSize: "0.8125rem" }}>
+                  <span>→</span>
+                  <span>extract</span>
+                  <span>→</span>
+                  <span>source code</span>
+                </span>
               </label>
-              <p style={{ fontFamily: "Inter, Arial, sans-serif", fontSize: "0.8125rem", color: "#939084", marginBottom: "8px" }}>
-                Worker sẽ tự extract và khởi động khi chấm Q2. Ưu tiên hơn Given API URL.
+              <p style={{ fontFamily: "Inter, Arial, sans-serif", fontSize: "0.8125rem", color: "#939084", margin: "0 0 8px" }}>
+                Worker tự extract và khởi động khi chấm Q2. Ưu tiên hơn Given API URL.
               </p>
-              <input
-                type="file"
-                accept=".zip"
-                onChange={(e) => setGivenZipFile(e.target.files?.[0] || null)}
-                style={{ fontFamily: "Inter, Arial, sans-serif", fontSize: "0.875rem" }}
-              />
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px",
+                  padding: "10px 14px",
+                  border: `1px dashed ${givenZipFile ? "#ff4f00" : "#c5c0b1"}`,
+                  borderRadius: "5px",
+                  backgroundColor: givenZipFile ? "#fff8f5" : "#fffefb",
+                  cursor: "pointer",
+                  transition: "border-color 0.15s, background-color 0.15s",
+                }}
+              >
+                <Upload size={16} color={givenZipFile ? "#ff4f00" : "#939084"} />
+                <span style={{ fontFamily: "Inter, Arial, sans-serif", fontSize: "0.9375rem", color: givenZipFile ? "#ff4f00" : "#939084", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {givenZipFile ? givenZipFile.name : "Chọn file .zip…"}
+                </span>
+                {givenZipFile && (
+                  <span style={{ fontFamily: "Inter, Arial, sans-serif", fontSize: "0.75rem", color: "#939084", flexShrink: 0 }}>
+                    {(givenZipFile.size / 1024).toFixed(1)} KB
+                  </span>
+                )}
+                <input type="file" accept=".zip" onChange={(e) => setGivenZipFile(e.target.files?.[0] || null)} style={{ display: "none" }} />
+              </label>
             </div>
 
             <button
               onClick={handleSaveSetup}
               disabled={savingSetup}
               style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "8px",
                 padding: "10px 20px",
                 fontFamily: "Inter, Arial, sans-serif",
                 fontSize: "1rem",
@@ -550,7 +602,8 @@ export default function AssignmentDetailPage() {
                 opacity: savingSetup ? 0.6 : 1,
               }}
             >
-              {savingSetup ? "Saving..." : "Save Setup"}
+              <Upload size={16} />
+              {savingSetup ? "Uploading..." : "Upload Resources"}
             </button>
           </div>
 
@@ -646,12 +699,30 @@ export default function AssignmentDetailPage() {
             </p>
 
             <div style={{ marginBottom: "16px" }}>
-              <input
-                type="file"
-                accept=".csv"
-                onChange={(e) => setImportFile(e.target.files?.[0] || null)}
-                style={{ fontFamily: "Inter, Arial, sans-serif", fontSize: "0.875rem" }}
-              />
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px",
+                  padding: "10px 14px",
+                  border: `1px dashed ${importFile ? "#ff4f00" : "#c5c0b1"}`,
+                  borderRadius: "5px",
+                  backgroundColor: importFile ? "#fff8f5" : "#fffefb",
+                  cursor: "pointer",
+                  transition: "border-color 0.15s, background-color 0.15s",
+                }}
+              >
+                <Upload size={16} color={importFile ? "#ff4f00" : "#939084"} />
+                <span style={{ fontFamily: "Inter, Arial, sans-serif", fontSize: "0.9375rem", color: importFile ? "#ff4f00" : "#939084", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {importFile ? importFile.name : "Chọn file .csv…"}
+                </span>
+                {importFile && (
+                  <span style={{ fontFamily: "Inter, Arial, sans-serif", fontSize: "0.75rem", color: "#939084", flexShrink: 0 }}>
+                    {(importFile.size / 1024).toFixed(1)} KB
+                  </span>
+                )}
+                <input type="file" accept=".csv" onChange={(e) => setImportFile(e.target.files?.[0] || null)} style={{ display: "none" }} />
+              </label>
             </div>
 
             {importResult && (
@@ -664,6 +735,9 @@ export default function AssignmentDetailPage() {
               onClick={handleImportParticipants}
               disabled={!importFile || uploading}
               style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "8px",
                 padding: "8px 16px",
                 fontFamily: "Inter, Arial, sans-serif",
                 fontSize: "0.875rem",
@@ -676,6 +750,7 @@ export default function AssignmentDetailPage() {
                 opacity: !importFile || uploading ? 0.6 : 1,
               }}
             >
+              <Users size={15} />
               {uploading ? "Importing..." : "Import Participants"}
             </button>
           </div>
@@ -893,19 +968,40 @@ export default function AssignmentDetailPage() {
             <h3 style={{ fontFamily: "Inter, Arial, sans-serif", fontSize: "1rem", fontWeight: 600, color: "#201515", marginBottom: "12px" }}>
               Bulk Upload Submissions (ZIP)
             </h3>
-            <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
-              <input
-                type="file"
-                accept=".zip"
-                onChange={(e) => setBulkFile(e.target.files?.[0] || null)}
-                style={{ fontFamily: "Inter, Arial, sans-serif", fontSize: "0.875rem" }}
-              />
+            <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap", marginBottom: "12px" }}>
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px",
+                  padding: "8px 14px",
+                  border: `1px dashed ${bulkFile ? "#ff4f00" : "#c5c0b1"}`,
+                  borderRadius: "5px",
+                  backgroundColor: bulkFile ? "#fff8f5" : "#fffefb",
+                  cursor: "pointer",
+                  flex: 1,
+                  minWidth: "200px",
+                  transition: "border-color 0.15s, background-color 0.15s",
+                }}
+              >
+                <Upload size={15} color={bulkFile ? "#ff4f00" : "#939084"} />
+                <span style={{ fontFamily: "Inter, Arial, sans-serif", fontSize: "0.875rem", color: bulkFile ? "#ff4f00" : "#939084", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {bulkFile ? bulkFile.name : "Chọn master.zip…"}
+                </span>
+                {bulkFile && (
+                  <span style={{ fontFamily: "Inter, Arial, sans-serif", fontSize: "0.75rem", color: "#939084", flexShrink: 0 }}>
+                    {(bulkFile.size / 1024 / 1024).toFixed(1)} MB
+                  </span>
+                )}
+                <input type="file" accept=".zip" onChange={(e) => setBulkFile(e.target.files?.[0] || null)} style={{ display: "none" }} />
+              </label>
               <button
                 onClick={handleBulkUpload}
                 disabled={!bulkFile || uploading}
-                style={{ padding: "8px 16px", fontFamily: "Inter, Arial, sans-serif", fontSize: "0.875rem", fontWeight: 600, color: "#fffefb", backgroundColor: "#ff4f00", border: "1px solid #ff4f00", borderRadius: "4px", cursor: !bulkFile || uploading ? "not-allowed" : "pointer", opacity: !bulkFile || uploading ? 0.6 : 1 }}
+                style={{ display: "inline-flex", alignItems: "center", gap: "8px", padding: "8px 16px", fontFamily: "Inter, Arial, sans-serif", fontSize: "0.875rem", fontWeight: 600, color: "#fffefb", backgroundColor: "#ff4f00", border: "1px solid #ff4f00", borderRadius: "4px", cursor: !bulkFile || uploading ? "not-allowed" : "pointer", opacity: !bulkFile || uploading ? 0.6 : 1, flexShrink: 0 }}
               >
-                {uploading ? "Uploading..." : "Upload"}
+                <Upload size={15} />
+                {uploading ? "Uploading..." : "Bulk Upload"}
               </button>
               {bulkResult && (
                 <span style={{ fontFamily: "Inter, Arial, sans-serif", fontSize: "0.875rem", color: "#166534" }}>{bulkResult}</span>
@@ -1043,8 +1139,9 @@ export default function AssignmentDetailPage() {
                   {exportJob.status === "Done" && (
                     <button
                       onClick={handleDownloadExport}
-                      style={{ padding: "8px 16px", fontFamily: "Inter, Arial, sans-serif", fontSize: "0.875rem", fontWeight: 600, color: "#fffefb", backgroundColor: "#ff4f00", border: "1px solid #ff4f00", borderRadius: "4px", cursor: "pointer" }}
+                      style={{ display: "inline-flex", alignItems: "center", gap: "8px", padding: "8px 16px", fontFamily: "Inter, Arial, sans-serif", fontSize: "0.875rem", fontWeight: 600, color: "#fffefb", backgroundColor: "#ff4f00", border: "1px solid #ff4f00", borderRadius: "4px", cursor: "pointer" }}
                     >
+                      <Download size={15} />
                       Download
                     </button>
                   )}

@@ -290,6 +290,7 @@ public class AssignmentService(IUnitOfWork unitOfWork, IConfiguration configurat
         Code            = entity.Code,
         Title           = entity.Title,
         Description     = entity.Description,
+        ExamSessionId   = entity.ExamSessionId,
         DatabaseSqlPath = entity.DatabaseSqlPath,
         GivenApiBaseUrl = entity.GivenApiBaseUrl,
         HasGivenZip     = entity.GivenZipPath != null,
