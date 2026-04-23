@@ -24,4 +24,10 @@ public class StudentContext
 
     /// <summary>null nếu không có Q1 Api (không cần SQL Server)</summary>
     public string? DatabaseName { get; set; }
+
+    /// <summary>Process của given API (khởi động từ given.zip), null nếu dùng GivenApiBaseUrl tĩnh</summary>
+    public Process? GivenApiProcess { get; set; }
+
+    /// <summary>Port của given API đang chạy, 0 nếu chưa khởi động</summary>
+    public int GivenApiPort { get; set; }
 }

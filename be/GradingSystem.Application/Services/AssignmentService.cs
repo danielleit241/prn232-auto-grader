@@ -66,9 +66,10 @@ public class AssignmentService(IUnitOfWork unitOfWork, IConfiguration configurat
     {
         var hasSql = request.DatabaseSql.HasValue;
         var hasUrl = !string.IsNullOrWhiteSpace(request.GivenApiBaseUrl);
+        var hasZip = request.GivenZip.HasValue;
 
-        if (!hasSql && !hasUrl)
-            throw new BadRequestException("Provide at least one of: databaseSql file or givenApiBaseUrl.");
+        if (!hasSql && !hasUrl && !hasZip)
+            throw new BadRequestException("Provide at least one of: databaseSql file, givenApiBaseUrl, or givenZip file.");
 
         var entity = await unitOfWork.Assignments.GetByIdAsync(id)
             ?? throw new NotFoundException($"Assignment '{id}' not found.");
@@ -90,6 +91,14 @@ public class AssignmentService(IUnitOfWork unitOfWork, IConfiguration configurat
             entity.GivenApiBaseUrl = url;
         }
 
+        if (hasZip)
+        {
+            var (fileName, stream) = request.GivenZip!.Value;
+            EnsureExtension(fileName, ".zip");
+            FileHelper.SafeDelete(entity.GivenZipPath);
+            entity.GivenZipPath = await SaveAssignmentFileAsync(id, "given.zip", stream, ct);
+        }
+
         unitOfWork.Assignments.Update(entity);
         await unitOfWork.SaveChangesAsync(ct);
 
@@ -102,6 +111,7 @@ public class AssignmentService(IUnitOfWork unitOfWork, IConfiguration configurat
             ?? throw new NotFoundException($"Assignment '{assignmentId}' not found.");
 
         FileHelper.SafeDelete(entity.DatabaseSqlPath);
+        FileHelper.SafeDelete(entity.GivenZipPath);
 
         // Get all questions for this assignment
         var questions = await unitOfWork.Questions.FindAsync(q => q.AssignmentId == assignmentId);
@@ -276,12 +286,13 @@ public class AssignmentService(IUnitOfWork unitOfWork, IConfiguration configurat
 
     private static AssignmentDto Map(Assignment entity) => new()
     {
-        Id             = entity.Id,
-        Code           = entity.Code,
-        Title          = entity.Title,
-        Description    = entity.Description,
+        Id              = entity.Id,
+        Code            = entity.Code,
+        Title           = entity.Title,
+        Description     = entity.Description,
         DatabaseSqlPath = entity.DatabaseSqlPath,
         GivenApiBaseUrl = entity.GivenApiBaseUrl,
-        CreatedAt      = entity.CreatedAt,
+        HasGivenZip     = entity.GivenZipPath != null,
+        CreatedAt       = entity.CreatedAt,
     };
 }

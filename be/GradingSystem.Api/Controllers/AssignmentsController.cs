@@ -34,10 +34,12 @@ public class AssignmentsController(IAssignmentService assignmentService, IBulkUp
     public async Task<IActionResult> UpsertResourcesAsync(
         Guid id,
         IFormFile? databaseSql,
+        IFormFile? givenZip,
         [FromForm] string? givenApiBaseUrl,
         CancellationToken ct)
     {
         Stream? databaseSqlStream = null;
+        Stream? givenZipStream = null;
         try
         {
             (string FileName, Stream Content)? databaseSqlPart = null;
@@ -47,12 +49,20 @@ public class AssignmentsController(IAssignmentService assignmentService, IBulkUp
                 databaseSqlPart = (databaseSql.FileName, databaseSqlStream);
             }
 
+            (string FileName, Stream Content)? givenZipPart = null;
+            if (givenZip is { Length: > 0 })
+            {
+                givenZipStream = givenZip.OpenReadStream();
+                givenZipPart = (givenZip.FileName, givenZipStream);
+            }
+
             var updated = await assignmentService.UpsertResourcesAsync(
                 id,
                 new UpsertAssignmentResourcesRequest
                 {
-                    DatabaseSql = databaseSqlPart,
-                    GivenApiBaseUrl = givenApiBaseUrl
+                    DatabaseSql     = databaseSqlPart,
+                    GivenApiBaseUrl = givenApiBaseUrl,
+                    GivenZip        = givenZipPart,
                 },
                 ct);
 
@@ -61,6 +71,7 @@ public class AssignmentsController(IAssignmentService assignmentService, IBulkUp
         finally
         {
             databaseSqlStream?.Dispose();
+            givenZipStream?.Dispose();
         }
     }
 

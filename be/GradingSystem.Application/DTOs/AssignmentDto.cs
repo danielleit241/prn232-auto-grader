@@ -8,5 +8,6 @@ public class AssignmentDto
     public string? Description { get; set; }
     public string? DatabaseSqlPath { get; set; }
     public string? GivenApiBaseUrl { get; set; }
+    public bool HasGivenZip { get; set; }
     public DateTime CreatedAt { get; set; }
 }

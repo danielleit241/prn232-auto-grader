@@ -45,6 +45,26 @@ public partial class ArtifactRunner(
             DatabaseName = dbName,
         };
 
+        // Start given API from zip (takes priority over static GivenApiBaseUrl for Q2)
+        string? effectiveGivenApiBaseUrl = assignment.GivenApiBaseUrl;
+        bool hasRazorQuestion = questions.Any(q => q.Type == QuestionType.Razor);
+        if (hasRazorQuestion && assignment.GivenZipPath != null)
+        {
+            var givenRoot = Path.Combine(sandboxPath, "given");
+            ZipFile.ExtractToDirectory(assignment.GivenZipPath, givenRoot);
+            logger.LogInformation("Extracted given API zip for job {JobId} → {Path}", job.Id, givenRoot);
+
+            var givenDll = FindEntryDll(givenRoot);
+            var givenPort = PickPort();
+            var givenProcess = StartDotnet(givenDll, givenPort);
+            await WaitForPortAsync($"http://localhost:{givenPort}", givenProcess, ct);
+
+            ctx.GivenApiProcess = givenProcess;
+            ctx.GivenApiPort = givenPort;
+            effectiveGivenApiBaseUrl = $"http://localhost:{givenPort}";
+            logger.LogInformation("Given API started on port {Port} for job {JobId}", givenPort, job.Id);
+        }
+
         foreach (var question in questions)
         {
             var questionDir = Path.Combine(studentRoot, question.ArtifactFolderName);
@@ -56,9 +76,10 @@ public partial class ArtifactRunner(
             }
 
             // Q2: validate student used the correct GivenApiBaseUrl in their appsettings
-            if (question.Type == QuestionType.Razor && assignment.GivenApiBaseUrl != null)
+            // Skip check when using given.zip (URL is dynamic, assigned at runtime)
+            if (question.Type == QuestionType.Razor && effectiveGivenApiBaseUrl != null && ctx.GivenApiProcess == null)
             {
-                var urlMismatch = CheckGivenApiBaseUrl(questionDir, assignment.GivenApiBaseUrl);
+                var urlMismatch = CheckGivenApiBaseUrl(questionDir, effectiveGivenApiBaseUrl);
                 if (urlMismatch != null)
                 {
                     logger.LogWarning("Q2 GivenApiBaseUrl mismatch for question {QId}: {Reason}", question.Id, urlMismatch);
@@ -75,7 +96,7 @@ public partial class ArtifactRunner(
 
             var dll = FindEntryDll(questionDir);
             var port = PickPort();
-            var env = BuildEnv(question, dbName, assignment.GivenApiBaseUrl);
+            var env = BuildEnv(question, dbName, effectiveGivenApiBaseUrl);
 
             var process = StartDotnet(dll, port, env);
             await WaitForPortAsync($"http://localhost:{port}", process, ct);
@@ -100,6 +121,16 @@ public partial class ArtifactRunner(
                     app.Process.Kill(entireProcessTree: true);
             }
             catch (Exception ex) { logger.LogWarning(ex, "Failed to kill process for question {QId}", qId); }
+        }
+
+        if (ctx.GivenApiProcess != null)
+        {
+            try
+            {
+                if (!ctx.GivenApiProcess.HasExited)
+                    ctx.GivenApiProcess.Kill(entireProcessTree: true);
+            }
+            catch (Exception ex) { logger.LogWarning(ex, "Failed to kill given API process"); }
         }
 
         try
