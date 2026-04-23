@@ -26,10 +26,9 @@ export default function AssignmentDetailPage() {
   const [activeTab, setActiveTab] = React.useState<Tab>(initialTab);
 
   // Setup tab state
-  const [setupForm, setSetupForm] = React.useState({
-    databaseSqlPath: "",
-    givenApiBaseUrl: "",
-  });
+  const [sqlFile, setSqlFile] = React.useState<File | null>(null);
+  const [givenZipFile, setGivenZipFile] = React.useState<File | null>(null);
+  const [givenApiBaseUrl, setGivenApiBaseUrl] = React.useState("");
   const [savingSetup, setSavingSetup] = React.useState(false);
   const [setupMessage, setSetupMessage] = React.useState<string | null>(null);
 
@@ -77,10 +76,7 @@ export default function AssignmentDetailPage() {
       const res = await api.getAssignmentById(assignmentId);
       if (res.status && res.data) {
         setAssignment(res.data);
-        setSetupForm({
-          databaseSqlPath: res.data.databaseSqlPath || "",
-          givenApiBaseUrl: res.data.givenApiBaseUrl || "",
-        });
+        setGivenApiBaseUrl(res.data.givenApiBaseUrl || "");
       } else {
         setError(res.message || "Failed to load assignment");
       }
@@ -118,15 +114,24 @@ export default function AssignmentDetailPage() {
 
   // --- Setup handlers ---
   const handleSaveSetup = React.useCallback(async () => {
+    if (!sqlFile && !givenApiBaseUrl && !givenZipFile) {
+      setSetupMessage("Vui lòng chọn ít nhất 1 trong 3: file SQL, Given API URL, hoặc given.zip");
+      return;
+    }
     try {
       setSavingSetup(true);
       setSetupMessage(null);
-      const res = await api.updateAssignment(assignmentId, {
-        databaseSqlPath: setupForm.databaseSqlPath,
-        givenApiBaseUrl: setupForm.givenApiBaseUrl,
-      });
-      if (res.status) {
-        setSetupMessage("Setup saved successfully");
+      const res = await api.uploadAssignmentResources(
+        assignmentId,
+        sqlFile,
+        givenApiBaseUrl || undefined,
+        givenZipFile
+      );
+      if (res.status && res.data) {
+        setAssignment(res.data);
+        setSetupMessage("Resources uploaded successfully");
+        setSqlFile(null);
+        setGivenZipFile(null);
       } else {
         setSetupMessage(res.message || "Failed to save");
       }
@@ -135,7 +140,7 @@ export default function AssignmentDetailPage() {
     } finally {
       setSavingSetup(false);
     }
-  }, [assignmentId, setupForm]);
+  }, [assignmentId, sqlFile, givenApiBaseUrl, givenZipFile]);
 
   const handleTriggerGrading = React.useCallback(async () => {
     try {
@@ -476,29 +481,56 @@ export default function AssignmentDetailPage() {
               </div>
             )}
 
+            {/* Current status */}
+            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "20px" }}>
+              <span style={{ padding: "3px 10px", borderRadius: "4px", fontSize: "0.8125rem", fontWeight: 600, backgroundColor: assignment.databaseSqlPath ? "#f0fdf4" : "#eceae3", color: assignment.databaseSqlPath ? "#166534" : "#939084", border: `1px solid ${assignment.databaseSqlPath ? "#bbf7d0" : "#c5c0b1"}` }}>
+                SQL: {assignment.databaseSqlPath ? "✓ Đã upload" : "Chưa có"}
+              </span>
+              <span style={{ padding: "3px 10px", borderRadius: "4px", fontSize: "0.8125rem", fontWeight: 600, backgroundColor: assignment.hasGivenZip ? "#f0fdf4" : "#eceae3", color: assignment.hasGivenZip ? "#166534" : "#939084", border: `1px solid ${assignment.hasGivenZip ? "#bbf7d0" : "#c5c0b1"}` }}>
+                Given ZIP: {assignment.hasGivenZip ? "✓ Đã upload" : "Chưa có"}
+              </span>
+              <span style={{ padding: "3px 10px", borderRadius: "4px", fontSize: "0.8125rem", fontWeight: 600, backgroundColor: assignment.givenApiBaseUrl ? "#f0fdf4" : "#eceae3", color: assignment.givenApiBaseUrl ? "#166534" : "#939084", border: `1px solid ${assignment.givenApiBaseUrl ? "#bbf7d0" : "#c5c0b1"}` }}>
+                Given URL: {assignment.givenApiBaseUrl || "Chưa có"}
+              </span>
+            </div>
+
             <div style={{ marginBottom: "20px" }}>
               <label style={{ display: "block", fontFamily: "Inter, Arial, sans-serif", fontSize: "0.875rem", fontWeight: 600, color: "#36342e", marginBottom: "8px" }}>
-                Database SQL Path
+                Database SQL (.sql)
               </label>
               <input
-                type="text"
-                value={setupForm.databaseSqlPath}
-                onChange={(e) => setSetupForm({ ...setupForm, databaseSqlPath: e.target.value })}
-                placeholder="e.g. /data/init.sql"
-                style={{ width: "100%", backgroundColor: "#fffefb", color: "#201515", border: "1px solid #c5c0b1", borderRadius: "5px", padding: "10px 14px", fontFamily: "Inter, Arial, sans-serif", fontSize: "1rem", outline: "none" }}
+                type="file"
+                accept=".sql"
+                onChange={(e) => setSqlFile(e.target.files?.[0] || null)}
+                style={{ fontFamily: "Inter, Arial, sans-serif", fontSize: "0.875rem" }}
               />
             </div>
 
-            <div style={{ marginBottom: "24px" }}>
+            <div style={{ marginBottom: "20px" }}>
               <label style={{ display: "block", fontFamily: "Inter, Arial, sans-serif", fontSize: "0.875rem", fontWeight: 600, color: "#36342e", marginBottom: "8px" }}>
                 Given API Base URL
               </label>
               <input
                 type="text"
-                value={setupForm.givenApiBaseUrl}
-                onChange={(e) => setSetupForm({ ...setupForm, givenApiBaseUrl: e.target.value })}
+                value={givenApiBaseUrl}
+                onChange={(e) => setGivenApiBaseUrl(e.target.value)}
                 placeholder="e.g. https://api.example.com"
                 style={{ width: "100%", backgroundColor: "#fffefb", color: "#201515", border: "1px solid #c5c0b1", borderRadius: "5px", padding: "10px 14px", fontFamily: "Inter, Arial, sans-serif", fontSize: "1rem", outline: "none" }}
+              />
+            </div>
+
+            <div style={{ marginBottom: "24px" }}>
+              <label style={{ display: "block", fontFamily: "Inter, Arial, sans-serif", fontSize: "0.875rem", fontWeight: 600, color: "#36342e", marginBottom: "4px" }}>
+                Given API Source ZIP (.zip)
+              </label>
+              <p style={{ fontFamily: "Inter, Arial, sans-serif", fontSize: "0.8125rem", color: "#939084", marginBottom: "8px" }}>
+                Worker sẽ tự extract và khởi động khi chấm Q2. Ưu tiên hơn Given API URL.
+              </p>
+              <input
+                type="file"
+                accept=".zip"
+                onChange={(e) => setGivenZipFile(e.target.files?.[0] || null)}
+                style={{ fontFamily: "Inter, Arial, sans-serif", fontSize: "0.875rem" }}
               />
             </div>
 
@@ -610,7 +642,7 @@ export default function AssignmentDetailPage() {
               Import Participants
             </h2>
             <p style={{ fontFamily: "Inter, Arial, sans-serif", fontSize: "0.9375rem", color: "#939084", marginBottom: "20px" }}>
-              Import participants from a CSV file. Format: studentCode,username
+              Import participants from a CSV file. Format: username,studentCode
             </p>
 
             <div style={{ marginBottom: "16px" }}>

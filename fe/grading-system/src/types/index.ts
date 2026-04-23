@@ -28,6 +28,7 @@ export interface Assignment {
   examSessionId?: string;
   databaseSqlPath?: string;
   givenApiBaseUrl?: string;
+  hasGivenZip: boolean;
   createdAt: string;
 }
 
@@ -61,9 +62,9 @@ export interface TestCase {
   isArray?: boolean;
   fields?: string[];
   score: number;
-  value?: string;
+  elementId?: string;
+  elementText?: string;
   selector?: string;
-  selectorText?: string;
   selectorMinCount?: number;
   createdAt: string;
 }
@@ -219,6 +220,10 @@ export interface CreateTestCaseRequest {
   expectJson?: string;
   expectedStatus?: number;
   score: number;
+  elementId?: string;
+  elementText?: string;
+  selector?: string;
+  selectorMinCount?: number;
 }
 
 export interface AdjustQuestionResultRequest {

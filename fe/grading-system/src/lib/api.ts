@@ -244,7 +244,8 @@ class ApiClient {
   async uploadAssignmentResources(
     assignmentId: string,
     databaseSql: File | null,
-    givenApiBaseUrl?: string
+    givenApiBaseUrl?: string,
+    givenZip?: File | null
   ): Promise<ApiResponse<Assignment>> {
     const formData = new FormData();
     if (databaseSql) {
@@ -252,6 +253,9 @@ class ApiClient {
     }
     if (givenApiBaseUrl) {
       formData.append("givenApiBaseUrl", givenApiBaseUrl);
+    }
+    if (givenZip) {
+      formData.append("givenZip", givenZip);
     }
     return this.uploadFileRaw<Assignment>(
       `/assignments/${assignmentId}/resources`,
