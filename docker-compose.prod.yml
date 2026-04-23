@@ -1,15 +1,11 @@
-# Stack: API + Worker + Postgres + SQL Server + RabbitMQ.
-# Compose substitutes ${VAR} from a file named .env next to this file (see .env.example).
-# cp .env.example .env   then   docker compose up -d --build
-# Optional DB UI: docker compose --profile tools up -d
+# PROD stack: includes api + worker and pulls prebuilt images from registry.
+# Uses the same .env file in this folder for ${VAR} substitution.
+# Example: docker compose -f docker-compose.prod.yml up -d
 
 services:
 
   api:
     image: ${DOCKER_REPO}/grading-system-api:${IMAGE_TAG}
-    build:
-      context: ./be
-      dockerfile: GradingSystem.Api/Dockerfile
     depends_on:
       postgres:
         condition: service_healthy
@@ -34,9 +30,6 @@ services:
 
   worker:
     image: ${DOCKER_REPO}/grading-system-worker:${IMAGE_TAG}
-    build:
-      context: ./be
-      dockerfile: GradingSystem.Worker/Dockerfile
     depends_on:
       postgres:
         condition: service_healthy
