@@ -5,6 +5,8 @@ namespace GradingSystem.Application.DTOs;
 
 public class CreateTestCaseRequest
 {
+    [MaxLength(200)]
+    public string? Name { get; set; }
     [Required]
     [MaxLength(10)]
     public string HttpMethod { get; set; } = string.Empty;
@@ -23,4 +25,9 @@ public class CreateTestCaseRequest
     public int? SelectorMinCount { get; set; }
     [Range(1, int.MaxValue)]
     public int Score { get; set; }
+    // Q1 newman: expected response body JSON
+    public JsonElement? ExpectedBody { get; set; }
+    // Q2 id-based: HTML element id to check
+    public string? ElementId { get; set; }
+    public string? ElementText { get; set; }
 }

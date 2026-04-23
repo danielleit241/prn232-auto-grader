@@ -1,210 +1,227 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import * as React from "react";
 import Link from "next/link";
 import { api } from "@/lib";
-import type { Submission } from "@/types";
+import type { GradingJob } from "@/types";
+import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
+import { StatusBadge } from "@/components/ui/StatusBadge";
+import { EmptyState } from "@/components/ui/EmptyState";
 
 export default function GradingPage() {
-  const [submissions, setSubmissions] = useState<Submission[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<"all" | "pending" | "grading" | "done">("pending");
-  const [sortBy, setSortBy] = useState<"date" | "student" | "status">("date");
+  const [jobs, setJobs] = React.useState<GradingJob[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
 
-  useEffect(() => {
-    loadSubmissions();
-  }, [filter, sortBy]);
+  React.useEffect(() => {
+    loadGradingJobs();
+  }, []);
 
-  const loadSubmissions = async () => {
+  const loadGradingJobs = async () => {
     try {
       setLoading(true);
-      
-      // Load all assignments first
-      const assignRes = await api.getAssignments();
-      let allSubmissions: Submission[] = [];
+      setError(null);
+      // Collect grading jobs from all submissions by listing assignments
+      const assRes = await api.getAssignments();
+      if (!assRes.status || !assRes.data) {
+        setError("Failed to load");
+        return;
+      }
 
-      if (assignRes.status && assignRes.data) {
-        // Load submissions for each assignment
-        const subPromises = assignRes.data.map((a) =>
-          api.getSubmissionsByAssignment(a.id)
-        );
-        const subResponses = await Promise.all(subPromises);
-
-        subResponses.forEach((res) => {
-          if (res.status && res.data) {
-            allSubmissions = [...allSubmissions, ...res.data];
+      const allJobs: GradingJob[] = [];
+      const pendingJobs: GradingJob[] = [];
+      await Promise.all(
+        assRes.data.map(async (assignment) => {
+          const subRes = await api.getSubmissionsByAssignment(assignment.id);
+          if (subRes.status && subRes.data) {
+            await Promise.all(
+              subRes.data.map(async (sub) => {
+                const jobRes = await api.getGradingJobsBySubmission(sub.id);
+                if (jobRes.status && jobRes.data) {
+                  const withSub = jobRes.data.map((j) => ({
+                    ...j,
+                    _submissionId: sub.id,
+                    _studentCode: sub.studentCode,
+                  }));
+                  allJobs.push(...withSub.filter(
+                    (j) => j.status === "Running" || j.status === "Pending"
+                  ));
+                }
+              })
+            );
           }
-        });
-      }
+        })
+      );
 
-      let filtered = allSubmissions;
-
-      if (filter !== "all") {
-        const filterMap: Record<string, number> = {
-          pending: 0,
-          grading: 1,
-          done: 2,
-        };
-        filtered = filtered.filter((s) => s.status === filterMap[filter]);
-      }
-
-      // Sort
-      if (sortBy === "date") {
-        filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-      } else if (sortBy === "student") {
-        filtered.sort((a, b) => a.studentCode.localeCompare(b.studentCode));
-      } else if (sortBy === "status") {
-        filtered.sort((a, b) => a.status - b.status);
-      }
-
-      setSubmissions(filtered);
+      // Sort by createdAt desc
+      allJobs.sort(
+        (a, b) =>
+          new Date(b.createdAt || 0).getTime() -
+          new Date(a.createdAt || 0).getTime()
+      );
+      setJobs(allJobs);
     } catch (err) {
-      console.error("Failed to load submissions:", err);
+      setError(err instanceof Error ? err.message : "Error loading");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleTriggerGradingBatch = async (ids: string[]) => {
-    try {
-      for (const id of ids) {
-        await api.triggerGrading(id);
-      }
-      loadSubmissions();
-    } catch (err) {
-      console.error("Failed to trigger grading:", err);
-    }
-  };
-
-  if (loading) return <div className="min-h-screen bg-slate-900 text-white p-8">Loading...</div>;
-
-  const unreadySubmissions = submissions.filter((s) => s.status === "Pending" || s.status === "Grading");
+  if (loading) {
+    return (
+      <div style={{ padding: "80px 24px" }}>
+        <LoadingSpinner fullPage label="Loading grading jobs..." />
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white p-8">
-      <div className="max-w-7xl mx-auto">
-        <div className="flex justify-between items-start mb-8">
-          <div>
-            <h1 className="text-3xl font-bold mb-2">Grading Dashboard</h1>
-            <p className="text-slate-400">Manage and review student submissions</p>
-          </div>
-          <div className="flex gap-3">
-            <Link href="/submissions" className="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg font-medium text-lg">
-              📋 View All Submissions
-            </Link>
-            {unreadySubmissions.length > 0 && (
-              <button
-                onClick={() => handleTriggerGradingBatch(unreadySubmissions.map((s) => s.id))}
-                className="bg-green-600 hover:bg-green-700 px-6 py-3 rounded-lg font-medium text-lg"
-              >
-                ⚡ Grade All ({unreadySubmissions.length})
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Controls */}
-        <div className="flex gap-4 mb-8 flex-wrap">
-          <div className="space-x-2">
-            {["all", "pending", "grading", "done"].map((status) => (
-              <button
-                key={status}
-                onClick={() => setFilter(status as any)}
-                className={`px-4 py-2 rounded transition capitalize inline-block ${
-                  filter === status
-                    ? "bg-blue-600 text-white"
-                    : "bg-slate-700 text-slate-300 hover:bg-slate-600"
-                }`}
-              >
-                {status}
-              </button>
-            ))}
-          </div>
-
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as any)}
-            className="bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white"
+    <div style={{ padding: "40px 24px", maxWidth: "1200px", margin: "0 auto" }}>
+      {/* Page Header */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          marginBottom: "32px",
+        }}
+      >
+        <div>
+          <p
+            style={{
+              fontFamily: "Inter, Arial, sans-serif",
+              fontSize: "0.875rem",
+              fontWeight: 600,
+              textTransform: "uppercase",
+              letterSpacing: "0.5px",
+              color: "#939084",
+              marginBottom: "8px",
+            }}
           >
-            <option value="date">Sort: Date</option>
-            <option value="student">Sort: Student</option>
-            <option value="status">Sort: Status</option>
-          </select>
-
-          {unreadySubmissions.length > 0 && (
-            <button
-              onClick={() => handleTriggerGradingBatch(unreadySubmissions.map((s) => s.id))}
-              className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded transition ml-auto"
-            >
-              Grade All ({unreadySubmissions.length})
-            </button>
-          )}
+            Grading
+          </p>
+          <h1
+            style={{
+              fontFamily: "Inter, Arial, sans-serif",
+              fontSize: "2.5rem",
+              fontWeight: 500,
+              lineHeight: 1.1,
+              color: "#201515",
+              margin: 0,
+            }}
+          >
+            Active Grading Jobs
+          </h1>
         </div>
-
-        {/* Submissions Table */}
-        {submissions.length === 0 ? (
-          <div className="text-center text-slate-400 py-12">No submissions to display</div>
-        ) : (
-          <div className="overflow-x-auto bg-slate-800 rounded-lg border border-slate-700">
-            <table className="w-full">
-              <thead className="bg-slate-700 border-b border-slate-600">
-                <tr>
-                  <th className="px-6 py-3 text-left text-sm font-semibold">Student</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold">Assignment</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold">Status</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold">Score</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold">Submitted</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-700">
-                {submissions.map((s) => (
-                  <tr key={s.id} className="hover:bg-slate-700/50 transition">
-                    <td className="px-6 py-4 font-medium">{s.studentCode}</td>
-                    <td className="px-6 py-4 text-slate-400">{s.assignmentId}</td>
-                    <td className="px-6 py-4">
-                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                        s.status === "Done" ? "bg-green-500/20 text-green-400" :
-                        s.status === "Grading" ? "bg-yellow-500/20 text-yellow-400" :
-                        s.status === "Error" ? "bg-red-500/20 text-red-400" :
-                        "bg-slate-600 text-slate-300"
-                      }`}>
-                        {s.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="font-mono font-semibold">
-                        {s.totalScore !== undefined && s.maxScore ? `${s.totalScore}/${s.maxScore}` : "-"}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-slate-400 text-sm">
-                      {new Date(s.createdAt).toLocaleDateString()}
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex gap-3">
-                        <Link
-                          href={`/submissions/${s.id}`}
-                          className="text-blue-400 hover:text-blue-300 transition"
-                        >
-                          View
-                        </Link>
-                        {(s.status === "Pending" || s.status === "Grading") && (
-                          <button
-                            onClick={() => handleTriggerGradingBatch([s.id])}
-                            className="text-green-400 hover:text-green-300 transition"
-                          >
-                            Grade
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <button
+          onClick={loadGradingJobs}
+          style={{
+            padding: "8px 16px",
+            fontFamily: "Inter, Arial, sans-serif",
+            fontSize: "0.875rem",
+            fontWeight: 600,
+            color: "#36342e",
+            backgroundColor: "#eceae3",
+            border: "1px solid #c5c0b1",
+            borderRadius: "8px",
+            cursor: "pointer",
+          }}
+        >
+          Refresh
+        </button>
       </div>
+
+      {error && (
+        <div
+          style={{
+            padding: "16px",
+            backgroundColor: "#fef2f2",
+            border: "1px solid #fecaca",
+            borderRadius: "5px",
+            color: "#dc2626",
+            marginBottom: "24px",
+          }}
+        >
+          {error}
+        </div>
+      )}
+
+      {jobs.length === 0 ? (
+        <EmptyState
+          title="No active grading jobs"
+          description="Grading jobs will appear here when grading is in progress. Trigger grading from an assignment's setup tab."
+        />
+      ) : (
+        <div style={{ display: "grid", gap: "12px" }}>
+          {jobs.map((job) => (
+            <div
+              key={job.id}
+              style={{
+                backgroundColor: "#fffefb",
+                border: "1px solid #c5c0b1",
+                borderRadius: "5px",
+                padding: "16px 20px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+                <StatusBadge status={job.status} />
+                <div>
+                  <div
+                    style={{
+                      fontFamily: "Inter, Arial, sans-serif",
+                      fontSize: "0.9375rem",
+                      fontWeight: 600,
+                      color: "#201515",
+                    }}
+                  >
+                    Submission: {(job as any)._studentCode || job.submissionId.slice(0, 8)}
+                  </div>
+                  <div
+                    style={{
+                      fontFamily: "Inter, Arial, sans-serif",
+                      fontSize: "0.8125rem",
+                      color: "#939084",
+                    }}
+                  >
+                    {job.startedAt
+                      ? `Started: ${new Date(job.startedAt).toLocaleString("vi-VN")}`
+                      : job.createdAt
+                        ? `Created: ${new Date(job.createdAt).toLocaleString("vi-VN")}`
+                        : "Pending"}
+                  </div>
+                  {job.errorMessage && (
+                    <div
+                      style={{
+                        fontFamily: "Inter, Arial, sans-serif",
+                        fontSize: "0.8125rem",
+                        color: "#dc2626",
+                        marginTop: "4px",
+                      }}
+                    >
+                      {job.errorMessage}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <Link
+                href={`/submissions/${job.submissionId}`}
+                style={{
+                  padding: "6px 12px",
+                  fontSize: "0.8125rem",
+                  fontWeight: 600,
+                  color: "#ff4f00",
+                  textDecoration: "none",
+                }}
+              >
+                View
+              </Link>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

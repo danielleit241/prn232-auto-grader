@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Net.Sockets;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using GradingSystem.Domain.Entities;
 using GradingSystem.Worker.Options;
 using Microsoft.Data.SqlClient;
@@ -45,6 +47,28 @@ public partial class ArtifactRunner(
             DatabaseName = dbName,
         };
 
+        // Start given API from zip (takes priority over static GivenApiBaseUrl for Q2)
+        string? effectiveGivenApiBaseUrl = assignment.GivenApiBaseUrl;
+        bool hasRazorQuestion = questions.Any(q => q.Type == QuestionType.Razor);
+        if (hasRazorQuestion && assignment.GivenZipPath != null)
+        {
+            var givenRoot = Path.Combine(sandboxPath, "given");
+            ZipFile.ExtractToDirectory(assignment.GivenZipPath, givenRoot);
+            logger.LogInformation("Extracted given API zip for job {JobId} → {Path}", job.Id, givenRoot);
+
+            StripPublishingListenConfigFromAppSettings(givenRoot);
+
+            var givenDll = FindEntryDll(givenRoot);
+            var givenPort = PickPort();
+            var givenProcess = StartDotnet(givenDll, givenPort);
+            await WaitForPortAsync($"http://127.0.0.1:{givenPort}", givenProcess, ct);
+
+            ctx.GivenApiProcess = givenProcess;
+            ctx.GivenApiPort = givenPort;
+            effectiveGivenApiBaseUrl = $"http://127.0.0.1:{givenPort}";
+            logger.LogInformation("Given API started on port {Port} for job {JobId}", givenPort, job.Id);
+        }
+
         foreach (var question in questions)
         {
             var questionDir = Path.Combine(studentRoot, question.ArtifactFolderName);
@@ -55,12 +79,31 @@ public partial class ArtifactRunner(
                 questionDir = studentRoot;
             }
 
+            // Q2: validate student used the correct GivenApiBaseUrl in their appsettings
+            // Skip check when using given.zip (URL is dynamic, assigned at runtime)
+            if (question.Type == QuestionType.Razor && effectiveGivenApiBaseUrl != null && ctx.GivenApiProcess == null)
+            {
+                var urlMismatch = CheckGivenApiBaseUrl(questionDir, effectiveGivenApiBaseUrl);
+                if (urlMismatch != null)
+                {
+                    logger.LogWarning("Q2 GivenApiBaseUrl mismatch for question {QId}: {Reason}", question.Id, urlMismatch);
+                    ctx.QuestionApps[question.Id] = new QuestionApp
+                    {
+                        Process = null!,
+                        Port = 0,
+                        GivenUrlInvalid = true,
+                        GivenUrlInvalidReason = urlMismatch,
+                    };
+                    continue;
+                }
+            }
+
             var dll = FindEntryDll(questionDir);
             var port = PickPort();
-            var env = BuildEnv(question, dbName, assignment.GivenApiBaseUrl);
+            var env = BuildEnv(question, dbName, effectiveGivenApiBaseUrl);
 
             var process = StartDotnet(dll, port, env);
-            await WaitForPortAsync($"http://localhost:{port}", process, ct);
+            await WaitForPortAsync($"http://127.0.0.1:{port}", process, ct);
 
             ctx.QuestionApps[question.Id] = new QuestionApp { Process = process, Port = port };
 
@@ -75,12 +118,23 @@ public partial class ArtifactRunner(
     {
         foreach (var (qId, app) in ctx.QuestionApps)
         {
+            if (app.GivenUrlInvalid) continue;
             try
             {
                 if (!app.Process.HasExited)
                     app.Process.Kill(entireProcessTree: true);
             }
             catch (Exception ex) { logger.LogWarning(ex, "Failed to kill process for question {QId}", qId); }
+        }
+
+        if (ctx.GivenApiProcess != null)
+        {
+            try
+            {
+                if (!ctx.GivenApiProcess.HasExited)
+                    ctx.GivenApiProcess.Kill(entireProcessTree: true);
+            }
+            catch (Exception ex) { logger.LogWarning(ex, "Failed to kill given API process"); }
         }
 
         try
@@ -171,33 +225,65 @@ public partial class ArtifactRunner(
 
         var candidateDll = Directory.GetFiles(dir, "*.dll", SearchOption.AllDirectories)
             .FirstOrDefault(f => !f.Contains(".Views.") && !f.EndsWith(".runtimeconfig.dll"));
-        
+
         if (candidateDll == null)
             throw new InvalidOperationException($"No suitable DLL found in {dir}");
-        
+
         return candidateDll;
+    }
+
+    private static void StripPublishingListenConfigFromAppSettings(string rootDir)
+    {
+        foreach (var path in Directory.GetFiles(rootDir, "appsettings*.json", SearchOption.AllDirectories))
+        {
+            try
+            {
+                var text = File.ReadAllText(path);
+                if (JsonNode.Parse(text) is not JsonObject root)
+                    continue;
+
+                root.Remove("Urls");
+                root.Remove("urls");
+                root.Remove("Kestrel");
+                root.Remove("kestrel");
+
+                File.WriteAllText(
+                    path,
+                    root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+            }
+            catch
+            {
+                /* unreadable or non-object JSON — leave file as-is */
+            }
+        }
     }
 
     private Process StartDotnet(string dll, int port, Dictionary<string, string>? env = null)
     {
-        var psi = new ProcessStartInfo("dotnet", $"\"{dll}\"")
+        // --urls wins over appsettings / hardcoded UseUrls (e.g. http://127.0.0.1:5100 in publish)
+        var bindUrl = $"http://127.0.0.1:{port}";
+        var psi = new ProcessStartInfo("dotnet", $"\"{dll}\" --urls={bindUrl}")
         {
             WorkingDirectory = Path.GetDirectoryName(dll),
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
         };
-        psi.Environment["ASPNETCORE_URLS"] = $"http://localhost:{port}";
+        psi.Environment["ASPNETCORE_URLS"] = bindUrl;
         if (env != null)
             foreach (var (k, v) in env) psi.Environment[k] = v;
 
         var process = Process.Start(psi)!;
 
-        process.OutputDataReceived += (_, _) => { };
+        process.OutputDataReceived += (_, e) =>
+        {
+            if (!string.IsNullOrWhiteSpace(e.Data))
+                logger.LogDebug("[student-stdout] {Line}", e.Data);
+        };
         process.ErrorDataReceived += (_, e) =>
         {
             if (!string.IsNullOrWhiteSpace(e.Data))
-                logger.LogDebug("[student-stderr] {Line}", e.Data);
+                logger.LogWarning("[student-stderr] {Line}", e.Data);
         };
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
@@ -238,8 +324,12 @@ public partial class ArtifactRunner(
             ct.ThrowIfCancellationRequested();
 
             if (process.HasExited)
+            {
+                // Wait briefly for async stderr/stdout readers to flush buffered output
+                await Task.Delay(300, CancellationToken.None);
                 throw new InvalidOperationException(
-                    $"Student app exited with code {process.ExitCode} before becoming ready — check stderr log above.");
+                    $"Student app exited with code {process.ExitCode} (0x{process.ExitCode:X8}) before becoming ready — see [student-stderr] lines above.");
+            }
 
             try
             {
@@ -265,6 +355,30 @@ public partial class ArtifactRunner(
         return stripped.StartsWith("CREATE DATABASE", StringComparison.OrdinalIgnoreCase)
             || stripped.StartsWith("USE ", StringComparison.OrdinalIgnoreCase)
             || stripped.StartsWith("USE[", StringComparison.OrdinalIgnoreCase);
+    }
+
+    // Returns null if OK, or an error string if the student's appsettings does not contain the givenApiBaseUrl.
+    private static string? CheckGivenApiBaseUrl(string questionDir, string givenApiBaseUrl)
+    {
+        var appsettingsFiles = Directory.GetFiles(questionDir, "appsettings*.json", SearchOption.AllDirectories)
+            .Where(f => !f.Contains("appsettings.Development", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (appsettingsFiles.Count == 0)
+            return "appsettings.json not found in student artifact";
+
+        foreach (var path in appsettingsFiles)
+        {
+            try
+            {
+                var content = File.ReadAllText(path);
+                if (content.Contains(givenApiBaseUrl, StringComparison.OrdinalIgnoreCase))
+                    return null; // found — OK
+            }
+            catch { /* skip unreadable file */ }
+        }
+
+        return $"Student appsettings does not contain the required GivenApiBaseUrl '{givenApiBaseUrl}'";
     }
 
     [System.Text.RegularExpressions.GeneratedRegex(@"^(\s*/\*.*?\*/\s*)+", System.Text.RegularExpressions.RegexOptions.Singleline)]

@@ -28,6 +28,11 @@ namespace GradingSystem.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -37,9 +42,15 @@ namespace GradingSystem.Infrastructure.Persistence.Migrations
                     b.Property<string>("Description")
                         .HasColumnType("text");
 
+                    b.Property<Guid?>("ExamSessionId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("GivenApiBaseUrl")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
+
+                    b.Property<string>("GivenZipPath")
+                        .HasColumnType("text");
 
                     b.Property<string>("Title")
                         .IsRequired()
@@ -51,7 +62,42 @@ namespace GradingSystem.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("Code")
+                        .IsUnique()
+                        .HasFilter("\"ExamSessionId\" IS NULL");
+
+                    b.HasIndex("ExamSessionId");
+
+                    b.HasIndex("ExamSessionId", "Code")
+                        .IsUnique()
+                        .HasFilter("\"ExamSessionId\" IS NOT NULL");
+
                     b.ToTable("Assignments");
+                });
+
+            modelBuilder.Entity("GradingSystem.Domain.Entities.ExamSession", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("ExamSessions");
                 });
 
             modelBuilder.Entity("GradingSystem.Domain.Entities.ExportJob", b =>
@@ -60,7 +106,7 @@ namespace GradingSystem.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<Guid>("AssignmentId")
+                    b.Property<Guid?>("AssignmentId")
                         .HasColumnType("uuid");
 
                     b.Property<DateTime>("CreatedAt")
@@ -69,7 +115,13 @@ namespace GradingSystem.Infrastructure.Persistence.Migrations
                     b.Property<string>("ErrorMessage")
                         .HasColumnType("text");
 
+                    b.Property<Guid?>("ExamSessionId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("FilePath")
+                        .HasColumnType("text");
+
+                    b.Property<string>("GradingRound")
                         .HasColumnType("text");
 
                     b.Property<string>("Status")
@@ -82,6 +134,8 @@ namespace GradingSystem.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("AssignmentId");
+
+                    b.HasIndex("ExamSessionId");
 
                     b.ToTable("ExportJobs");
                 });
@@ -101,6 +155,11 @@ namespace GradingSystem.Infrastructure.Persistence.Migrations
                     b.Property<DateTime?>("FinishedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("GradingRound")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
                     b.Property<DateTime?>("StartedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -119,6 +178,44 @@ namespace GradingSystem.Infrastructure.Persistence.Migrations
                     b.HasIndex("SubmissionId");
 
                     b.ToTable("GradingJobs");
+                });
+
+            modelBuilder.Entity("GradingSystem.Domain.Entities.Participant", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AssignmentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("ExamSessionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("StudentCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Username")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AssignmentId");
+
+                    b.HasIndex("ExamSessionId", "Username")
+                        .IsUnique();
+
+                    b.ToTable("Participants");
                 });
 
             modelBuilder.Entity("GradingSystem.Domain.Entities.Question", b =>
@@ -184,6 +281,9 @@ namespace GradingSystem.Infrastructure.Persistence.Migrations
                     b.Property<string>("Detail")
                         .HasColumnType("text");
 
+                    b.Property<Guid?>("GradingJobId")
+                        .HasColumnType("uuid");
+
                     b.Property<int>("MaxScore")
                         .HasColumnType("integer");
 
@@ -204,6 +304,10 @@ namespace GradingSystem.Infrastructure.Persistence.Migrations
                     b.HasIndex("QuestionId");
 
                     b.HasIndex("SubmissionId");
+
+                    b.HasIndex("GradingJobId", "QuestionId")
+                        .IsUnique()
+                        .HasFilter("\"GradingJobId\" IS NOT NULL");
 
                     b.ToTable("QuestionResults");
                 });
@@ -254,6 +358,17 @@ namespace GradingSystem.Infrastructure.Persistence.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("GradingRound")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<bool>("HasArtifact")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid?>("ParticipantId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasColumnType("text");
@@ -269,6 +384,10 @@ namespace GradingSystem.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("AssignmentId");
+
+                    b.HasIndex("ParticipantId", "GradingRound")
+                        .IsUnique()
+                        .HasFilter("\"ParticipantId\" IS NOT NULL");
 
                     b.ToTable("Submissions");
                 });
@@ -320,15 +439,28 @@ namespace GradingSystem.Infrastructure.Persistence.Migrations
                     b.ToTable("TestCases");
                 });
 
+            modelBuilder.Entity("GradingSystem.Domain.Entities.Assignment", b =>
+                {
+                    b.HasOne("GradingSystem.Domain.Entities.ExamSession", "ExamSession")
+                        .WithMany("Assignments")
+                        .HasForeignKey("ExamSessionId");
+
+                    b.Navigation("ExamSession");
+                });
+
             modelBuilder.Entity("GradingSystem.Domain.Entities.ExportJob", b =>
                 {
                     b.HasOne("GradingSystem.Domain.Entities.Assignment", "Assignment")
                         .WithMany()
-                        .HasForeignKey("AssignmentId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .HasForeignKey("AssignmentId");
+
+                    b.HasOne("GradingSystem.Domain.Entities.ExamSession", "ExamSession")
+                        .WithMany()
+                        .HasForeignKey("ExamSessionId");
 
                     b.Navigation("Assignment");
+
+                    b.Navigation("ExamSession");
                 });
 
             modelBuilder.Entity("GradingSystem.Domain.Entities.GradingJob", b =>
@@ -340,6 +472,25 @@ namespace GradingSystem.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("Submission");
+                });
+
+            modelBuilder.Entity("GradingSystem.Domain.Entities.Participant", b =>
+                {
+                    b.HasOne("GradingSystem.Domain.Entities.Assignment", "Assignment")
+                        .WithMany("Participants")
+                        .HasForeignKey("AssignmentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("GradingSystem.Domain.Entities.ExamSession", "ExamSession")
+                        .WithMany("Participants")
+                        .HasForeignKey("ExamSessionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Assignment");
+
+                    b.Navigation("ExamSession");
                 });
 
             modelBuilder.Entity("GradingSystem.Domain.Entities.Question", b =>
@@ -355,6 +506,10 @@ namespace GradingSystem.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("GradingSystem.Domain.Entities.QuestionResult", b =>
                 {
+                    b.HasOne("GradingSystem.Domain.Entities.GradingJob", "GradingJob")
+                        .WithMany()
+                        .HasForeignKey("GradingJobId");
+
                     b.HasOne("GradingSystem.Domain.Entities.Question", "Question")
                         .WithMany()
                         .HasForeignKey("QuestionId")
@@ -366,6 +521,8 @@ namespace GradingSystem.Infrastructure.Persistence.Migrations
                         .HasForeignKey("SubmissionId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("GradingJob");
 
                     b.Navigation("Question");
 
@@ -391,7 +548,13 @@ namespace GradingSystem.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("GradingSystem.Domain.Entities.Participant", "Participant")
+                        .WithMany("Submissions")
+                        .HasForeignKey("ParticipantId");
+
                     b.Navigation("Assignment");
+
+                    b.Navigation("Participant");
                 });
 
             modelBuilder.Entity("GradingSystem.Domain.Entities.TestCase", b =>
@@ -407,8 +570,22 @@ namespace GradingSystem.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("GradingSystem.Domain.Entities.Assignment", b =>
                 {
+                    b.Navigation("Participants");
+
                     b.Navigation("Questions");
 
+                    b.Navigation("Submissions");
+                });
+
+            modelBuilder.Entity("GradingSystem.Domain.Entities.ExamSession", b =>
+                {
+                    b.Navigation("Assignments");
+
+                    b.Navigation("Participants");
+                });
+
+            modelBuilder.Entity("GradingSystem.Domain.Entities.Participant", b =>
+                {
                     b.Navigation("Submissions");
                 });
 

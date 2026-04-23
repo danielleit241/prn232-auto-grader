@@ -1,19 +1,27 @@
+# PROD stack: includes api + worker and pulls prebuilt images from registry.
+# Uses the same .env file in this folder for ${VAR} substitution.
+# Example: docker compose -f docker-compose.prod.yml up -d
+
 services:
 
   api:
-    image: ${DOCKER_REPO}/grading-system-api:${IMAGE_TAG:-latest}
-    build:
-      context: ./be
-      dockerfile: GradingSystem.Api/Dockerfile
+    image: ${DOCKER_REPO}/grading-system-api:${IMAGE_TAG}
     depends_on:
       postgres:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     environment:
       ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: ${ASPNETCORE_URLS}
       ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
       Storage__BasePath: /storage
+      RabbitMQ__Host: rabbitmq://rabbitmq
+      RabbitMQ__Username: ${RABBITMQ_USER}
+      RabbitMQ__Password: ${RABBITMQ_PASSWORD}
+      Cors__AllowedOrigins__0: ${CORS_ORIGIN_0}
     ports:
-      - "5049:8080"
+      - "${API_PORT}:8080"
     volumes:
       - storage_data:/storage
     networks:
@@ -21,42 +29,29 @@ services:
     restart: unless-stopped
 
   worker:
-    image: ${DOCKER_REPO}/grading-system-worker:${IMAGE_TAG:-latest}
-    build:
-      context: ./be
-      dockerfile: GradingSystem.Worker/Dockerfile
+    image: ${DOCKER_REPO}/grading-system-worker:${IMAGE_TAG}
     depends_on:
       postgres:
         condition: service_healthy
       sqlserver:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
       ConnectionStrings__SqlServer: "Server=sqlserver,1433;User Id=sa;Password=${SA_PASSWORD};TrustServerCertificate=true"
       Storage__BasePath: /storage
-      Worker__PollIntervalSeconds: 5
-      Worker__ArtifactHealthCheckTimeoutSeconds: 30
-      Worker__ArtifactPortRangeStart: 7000
-      Worker__ArtifactPortRangeEnd: 7999
+      RabbitMQ__Host: rabbitmq://rabbitmq
+      RabbitMQ__Username: ${RABBITMQ_USER}
+      RabbitMQ__Password: ${RABBITMQ_PASSWORD}
+      Worker__MaxConcurrentJobs: ${WORKER_MAX_CONCURRENT_JOBS}
+      Worker__PollIntervalSeconds: ${WORKER_POLL_INTERVAL_SECONDS}
+      Worker__ArtifactHealthCheckTimeoutSeconds: ${WORKER_ARTIFACT_HEALTH_TIMEOUT_SECONDS}
+      Worker__ArtifactPortRangeStart: ${WORKER_ARTIFACT_PORT_RANGE_START}
+      Worker__ArtifactPortRangeEnd: ${WORKER_ARTIFACT_PORT_RANGE_END}
     volumes:
       - storage_data:/storage
-    networks:
-      - grading_net
-    restart: unless-stopped
-
-  fe:
-    image: ${DOCKER_REPO}/grading-system-fe:${IMAGE_TAG:-latest}
-    build:
-      context: ./fe/grading-system
-      dockerfile: Dockerfile
-      args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5049/api}
-        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
-    depends_on:
-      - api
-    ports:
-      - "3000:3000"
     networks:
       - grading_net
     restart: unless-stopped
@@ -68,7 +63,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PUBLISH_PORT}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
@@ -87,7 +82,7 @@ services:
       SA_PASSWORD: ${SA_PASSWORD}
       MSSQL_PID: Express
     ports:
-      - "1433:1433"
+      - "${SQLSERVER_PUBLISH_PORT}:1433"
     volumes:
       - sqlserver_data:/var/opt/mssql
     networks:
@@ -97,10 +92,31 @@ services:
       interval: 15s
       timeout: 10s
       retries: 10
-      start_period: 30s
+      start_period: 45s
+    restart: unless-stopped
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    ports:
+      - "${RABBITMQ_AMQP_PORT}:5672"
+      - "${RABBITMQ_UI_PORT}:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - grading_net
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     restart: unless-stopped
 
   pgweb:
+    profiles: [tools]
     image: sosedoff/pgweb:latest
     depends_on:
       postgres:
@@ -108,7 +124,7 @@ services:
     environment:
       DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable"
     ports:
-      - "8081:8081"
+      - "${PGWEB_PORT}:8081"
     networks:
       - grading_net
     restart: unless-stopped
@@ -116,6 +132,7 @@ services:
 volumes:
   postgres_data:
   sqlserver_data:
+  rabbitmq_data:
   storage_data:
 
 networks:

@@ -6,12 +6,7 @@ import { usePathname } from "next/navigation";
 import { siteConfig } from "@/config/site";
 import { Menu, X } from "lucide-react";
 
-const navItems = [
-  { label: "Dashboard", href: "/dashboard" },
-  { label: "Assignments", href: "/assignments" },
-  { label: "Submissions", href: "/submissions" },
-  { label: "Grading", href: "/grading" },
-];
+const navItems = siteConfig.navItems;
 
 export function Navbar() {
   const pathname = usePathname();
@@ -39,7 +34,6 @@ export function Navbar() {
           justifyContent: "space-between",
         }}
       >
-        {/* Logo */}
         <Link
           href="/"
           style={{
@@ -72,7 +66,6 @@ export function Navbar() {
           </span>
         </Link>
 
-        {/* Desktop Navigation */}
         <nav
           style={{
             display: "flex",
@@ -82,7 +75,7 @@ export function Navbar() {
           className="hidden md:flex"
         >
           {navItems.map((item) => {
-            const isActive = pathname === item.href;
+            const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
             return (
               <Link
                 key={item.href}
@@ -124,7 +117,6 @@ export function Navbar() {
           })}
         </nav>
 
-        {/* Right Side - Login CTA */}
         <div
           style={{
             display: "flex",
@@ -163,7 +155,6 @@ export function Navbar() {
             Login
           </Link>
 
-          {/* Mobile Menu Button */}
           <button
             className="md:hidden"
             style={{
@@ -186,7 +177,6 @@ export function Navbar() {
         </div>
       </div>
 
-      {/* Mobile Navigation */}
       {mobileMenuOpen && (
         <div
           className="md:hidden"

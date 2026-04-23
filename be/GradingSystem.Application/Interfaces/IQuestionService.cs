@@ -9,4 +9,5 @@ public interface IQuestionService
         IReadOnlyList<CreateQuestionRequest> requests,
         CancellationToken ct = default);
     Task<IEnumerable<QuestionDto>> GetByAssignmentIdAsync(Guid assignmentId, CancellationToken ct = default);
+    Task<QuestionDto> DeleteAsync(Guid questionId, CancellationToken ct = default);
 }

@@ -9,6 +9,11 @@ public class ExpectJson
     public string? Selector { get; set; }
     public string? SelectorText { get; set; }
     public int? SelectorMinCount { get; set; }
+    // Q1: exact JSON body comparison via newman
+    public System.Text.Json.JsonElement? Body { get; set; }
+    // Q2: check element existence/text by HTML id attribute
+    public string? ElementId { get; set; }
+    public string? ElementText { get; set; }
 }
 
 public class TestCaseResult

@@ -1,354 +1,740 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import * as React from "react";
 import Link from "next/link";
+import { useParams } from "next/navigation";
 import { api } from "@/lib";
 import type { Question, TestCase, CreateTestCaseRequest } from "@/types";
-
-interface FormData {
-  name: string;
-  httpMethod: string;
-  urlTemplate: string;
-  inputJson: string;
-  expectJson: string;
-  score: number;
-}
+import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
+import { StatusBadge } from "@/components/ui/StatusBadge";
+import { EmptyState } from "@/components/ui/EmptyState";
 
 export default function QuestionDetailPage() {
   const params = useParams();
-  const assignmentId = params?.id as string;
-  const questionId = params?.qid as string;
-  const [question, setQuestion] = useState<Question | null>(null);
-  const [testCases, setTestCases] = useState<TestCase[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [showForm, setShowForm] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [formData, setFormData] = useState<FormData>({
-    name: "",
-    httpMethod: "GET",
-    urlTemplate: "",
-    inputJson: "",
-    expectJson: "",
-    score: 0,
-  });
-  const [submitting, setSubmitting] = useState(false);
+  const assignmentId = params.id as string;
+  const questionId = params.qid as string;
 
-  useEffect(() => {
-    if (questionId) {
-      loadData();
-    }
+  const [question, setQuestion] = React.useState<Question | null>(null);
+  const [testCases, setTestCases] = React.useState<TestCase[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const [showCreate, setShowCreate] = React.useState(false);
+  const [jsonInput, setJsonInput] = React.useState('');
+  const [jsonError, setJsonError] = React.useState<string | null>(null);
+  const [creating, setCreating] = React.useState(false);
+  const [deleting, setDeleting] = React.useState<string | null>(null);
+
+  // Score tracking
+  const totalUsedScore = testCases.reduce((sum, tc) => sum + tc.score, 0);
+  const maxScore = question?.maxScore ?? 0;
+  const remainingScore = maxScore - totalUsedScore;
+  const scorePercentage = maxScore > 0 ? Math.min((totalUsedScore / maxScore) * 100, 100) : 0;
+  const isOverBudget = totalUsedScore > maxScore;
+  const isExactMatch = totalUsedScore === maxScore;
+
+  // JSON template for placeholder – differs by question type
+  const isRazor = question?.type === 1;
+
+  const jsonPlaceholderApi = `// Single test case (API):
+{
+  "httpMethod": "GET",
+  "urlTemplate": "/api/students",
+  "expectedStatus": 200,
+  "expectedBody": [ ... ],
+  "score": 1
+}
+
+// Or array of test cases:
+[
+  { "httpMethod": "GET", "urlTemplate": "/api/students", "expectedStatus": 200, "score": 1 },
+  { "httpMethod": "POST", "urlTemplate": "/api/students", "expectedStatus": 201, "requestBody": { ... }, "score": 1 }
+]`;
+
+  const jsonPlaceholderRazor = `// Single test case (Razor):
+{
+  "httpMethod": "GET",
+  "urlTemplate": "/Instructor",
+  "expectedStatus": 200,
+  "elementId": "ip_instructorName",
+  "score": 1
+}
+
+// Or array of test cases:
+[
+  { "httpMethod": "GET", "urlTemplate": "/Instructor", "expectedStatus": 200, "elementId": "ip_instructorName", "score": 1 },
+  { "httpMethod": "GET", "urlTemplate": "/Instructor", "expectedStatus": 200, "selector": "table tbody tr", "selectorMinCount": 5, "score": 1 },
+  { "httpMethod": "GET", "urlTemplate": "/Instructor/1", "expectedStatus": 200, "elementId": "span_1", "elementText": "1", "score": 1 }
+]`;
+
+  const jsonPlaceholder = isRazor ? jsonPlaceholderRazor : jsonPlaceholderApi;
+
+  React.useEffect(() => {
+    loadData();
   }, [questionId]);
 
   const loadData = async () => {
     try {
       setLoading(true);
-      
-      // Get all questions for the assignment
-      const qRes = await api.getQuestionsByAssignment(assignmentId);
-      
-      if (qRes.status && qRes.data) {
-        // Find the specific question
-        const foundQuestion = qRes.data.find((q) => q.id === questionId);
-        if (foundQuestion) {
-          setQuestion(foundQuestion);
-          
-          // Get test cases for this question
-          const tcRes = await api.getTestCasesByQuestion(questionId);
-          if (tcRes.status && tcRes.data) {
-            setTestCases(tcRes.data);
-          }
+      // Load question details by fetching all questions from assignment
+      const res = await api.getQuestionsByAssignment(assignmentId);
+      if (res.status && res.data) {
+        const q = res.data.find((q: Question) => q.id === questionId);
+        if (q) {
+          setQuestion(q);
+          await loadTestCases();
         } else {
           setError("Question not found");
         }
+      } else {
+        setError(res.message || "Failed to load question");
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load question data");
+      setError(err instanceof Error ? err.message : "Error loading");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleAddTestCase = async () => {
+  const loadTestCases = async () => {
+    const res = await api.getTestCasesByQuestion(questionId);
+    if (res.status && res.data) {
+      setTestCases(res.data);
+    }
+  };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const mapJsonToRequest = (obj: any): CreateTestCaseRequest => {
+    const method = obj.httpMethod || obj.method || "GET";
+    const url = obj.urlTemplate || obj.url || "";
+    return {
+      name: obj.name || `${method} ${url}`,
+      httpMethod: method,
+      urlTemplate: url,
+      expectedStatus: obj.expectedStatus ?? obj.status ?? 200,
+      expectJson: obj.expectedBody !== undefined
+        ? JSON.stringify(obj.expectedBody)
+        : obj.expectJson ?? undefined,
+      inputJson: obj.requestBody !== undefined
+        ? JSON.stringify(obj.requestBody)
+        : obj.inputJson ?? undefined,
+      score: obj.score ?? 1,
+      elementId: obj.elementId,
+      elementText: obj.elementText,
+      selector: obj.selector,
+      selectorMinCount: obj.selectorMinCount,
+    };
+  };
+
+  const handleCreateFromJson = async () => {
+    setJsonError(null);
+    const trimmed = jsonInput.trim();
+    if (!trimmed) {
+      setJsonError("Please enter JSON for the test case(s).");
+      return;
+    }
+
+    // Parse JSON
+    let parsed: unknown;
     try {
-      setSubmitting(true);
+      parsed = JSON.parse(trimmed);
+    } catch {
+      setJsonError("Invalid JSON. Please check syntax.");
+      return;
+    }
 
-      const payload: CreateTestCaseRequest = {
-        name: formData.name,
-        httpMethod: formData.httpMethod,
-        urlTemplate: formData.urlTemplate,
-        inputJson: formData.inputJson || undefined,
-        expectJson: formData.expectJson,
-        score: formData.score,
-      };
+    // Normalize to array
+    const items = Array.isArray(parsed) ? parsed : [parsed];
+    if (items.length === 0) {
+      setJsonError("JSON array is empty.");
+      return;
+    }
 
-      const res = await api.createTestCases(questionId, [payload]);
-
-      if (res.status) {
-        setFormData({
-          name: "",
-          httpMethod: "GET",
-          urlTemplate: "",
-          inputJson: "",
-          expectJson: "",
-          score: 0,
-        });
-        setShowForm(false);
-        loadData();
-      } else {
-        setError(res.message || "Failed to add test case");
+    // Map to CreateTestCaseRequest[]
+    const requests: CreateTestCaseRequest[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (typeof item !== "object" || item === null) {
+        setJsonError(`Item at index ${i} is not a valid object.`);
+        return;
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error adding test case");
+      const req = mapJsonToRequest(item);
+      if (!req.urlTemplate) {
+        setJsonError(`Item ${i + 1}: "urlTemplate" is required.`);
+        return;
+      }
+      if (req.score <= 0) {
+        setJsonError(`Item ${i + 1}: "score" must be > 0.`);
+        return;
+      }
+      requests.push(req);
+    }
+
+    // Validate total score
+    const addedScore = requests.reduce((s, r) => s + r.score, 0);
+    if (addedScore + totalUsedScore > maxScore) {
+      setJsonError(
+        `Total score of new test cases (${addedScore} pts) would exceed the max score (${maxScore}). Remaining budget: ${remainingScore} pts.`
+      );
+      return;
+    }
+
+    try {
+      setCreating(true);
+      const res = await api.createTestCases(questionId, requests);
+      if (res.status && res.data) {
+        setTestCases([...testCases, ...res.data]);
+        setShowCreate(false);
+        setJsonInput('');
+        setJsonError(null);
+      } else {
+        setJsonError(res.message || "Failed to create test case(s).");
+      }
+    } catch {
+      setJsonError("Network error creating test case(s).");
     } finally {
-      setSubmitting(false);
+      setCreating(false);
     }
   };
 
   const handleDeleteTestCase = async (testCaseId: string) => {
-    if (!confirm("Are you sure you want to delete this test case?")) return;
-
+    if (!confirm("Delete this test case?")) return;
     try {
-      setSubmitting(true);
+      setDeleting(testCaseId);
       const res = await api.deleteTestCase(testCaseId);
       if (res.status) {
-        loadData();
-      } else {
-        setError(res.message || "Failed to delete test case");
+        setTestCases(testCases.filter((tc) => tc.id !== testCaseId));
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error deleting test case");
+    } catch {
+      // ignore
     } finally {
-      setSubmitting(false);
+      setDeleting(null);
     }
   };
 
-  const handleEditTestCase = (tc: TestCase) => {
-    setFormData({
-      name: tc.name || "",
-      httpMethod: tc.httpMethod,
-      urlTemplate: tc.urlTemplate,
-      inputJson: tc.inputJson || "",
-      expectJson: tc.expectJson || tc.value || "",
-      score: tc.score || 0,
-    });
-    setEditingId(tc.id);
-    setShowForm(true);
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
+  if (loading) {
+    return (
+      <div style={{ padding: "80px 24px" }}>
+        <LoadingSpinner fullPage label="Loading question..." />
+      </div>
+    );
+  }
 
-  const handleUpdateTestCase = async () => {
-    if (!editingId) return;
-
-    try {
-      setSubmitting(true);
-
-      const payload: CreateTestCaseRequest = {
-        name: formData.name,
-        httpMethod: formData.httpMethod,
-        urlTemplate: formData.urlTemplate,
-        inputJson: formData.inputJson || undefined,
-        expectJson: formData.expectJson,
-        score: formData.score,
-      };
-
-      const res = await api.updateTestCase(editingId, payload);
-
-      if (res.status) {
-        setFormData({
-          name: "",
-          httpMethod: "GET",
-          urlTemplate: "",
-          inputJson: "",
-          expectJson: "",
-          score: 0,
-        });
-        setEditingId(null);
-        setShowForm(false);
-        loadData();
-      } else {
-        setError(res.message || "Failed to update test case");
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error updating test case");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  if (loading) return <div className="min-h-screen bg-slate-900 text-white p-8">Loading...</div>;
-  if (error || !question) return <div className="min-h-screen bg-slate-900 p-8 text-red-400">{error}</div>;
-
-  return (
-    <div className="min-h-screen bg-slate-900 text-white p-8">
-      <div className="max-w-4xl mx-auto">
-        <Link href={`/assignments/${assignmentId}`} className="text-blue-400 hover:text-blue-300 mb-4 inline-block">
-          ← Back to Assignment
-        </Link>
-
-        <h1 className="text-2xl font-bold mb-2">{question.title}</h1>
-        <p className="text-slate-400 mb-6">
-          Type: {question.type === "Api" ? "Web API (Q1)" : "Razor Pages (Q2)"} | Max Score: {question.maxScore}
-        </p>
-
-        <div className="bg-slate-800 p-6 rounded-lg border border-slate-700 mb-8">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-bold">Test Cases ({testCases.length})</h2>
-            <button
-              onClick={() => setShowForm(!showForm)}
-              className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded transition"
-            >
-              {showForm ? "Cancel" : "Add Test Case"}
-            </button>
-          </div>
-
-          {showForm && (
-            <div className="bg-slate-700 p-4 rounded-lg mb-6">
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm mb-1">Test Case Name</label>
-                  <input
-                    type="text"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    placeholder="e.g., Get User by ID"
-                    className="w-full bg-slate-600 border border-slate-500 rounded px-3 py-2 text-white placeholder-slate-400"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm mb-1">HTTP Method</label>
-                  <select
-                    value={formData.httpMethod}
-                    onChange={(e) => setFormData({ ...formData, httpMethod: e.target.value })}
-                    className="w-full bg-slate-600 border border-slate-500 rounded px-3 py-2 text-white"
-                  >
-                    <option>GET</option>
-                    <option>POST</option>
-                    <option>PUT</option>
-                    <option>DELETE</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm mb-1">URL Template</label>
-                  <input
-                    type="text"
-                    value={formData.urlTemplate}
-                    onChange={(e) => setFormData({ ...formData, urlTemplate: e.target.value })}
-                    placeholder="/api/users"
-                    className="w-full bg-slate-600 border border-slate-500 rounded px-3 py-2 text-white placeholder-slate-400"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm mb-1">Input JSON (Optional)</label>
-                  <textarea
-                    value={formData.inputJson}
-                    onChange={(e) => setFormData({ ...formData, inputJson: e.target.value })}
-                    placeholder='{"id": 1}'
-                    className="w-full bg-slate-600 border border-slate-500 rounded px-3 py-2 text-white placeholder-slate-400 font-mono text-sm"
-                    rows={3}
-                  />
-                  <p className="text-xs text-slate-400 mt-1">Request body or query params as JSON</p>
-                </div>
-
-                <div>
-                  <label className="block text-sm mb-1">Expected JSON Response</label>
-                  <textarea
-                    value={formData.expectJson}
-                    onChange={(e) => setFormData({ ...formData, expectJson: e.target.value })}
-                    placeholder='{"id": 1, "name": "John"}'
-                    className="w-full bg-slate-600 border border-slate-500 rounded px-3 py-2 text-white placeholder-slate-400 font-mono text-sm"
-                    rows={3}
-                  />
-                  <p className="text-xs text-slate-400 mt-1">Expected response JSON</p>
-                </div>
-
-                <div>
-                  <label className="block text-sm mb-1">Score Points</label>
-                  <input
-                    type="number"
-                    value={formData.score}
-                    onChange={(e) => setFormData({ ...formData, score: Number(e.target.value) })}
-                    min={0}
-                    className="w-full bg-slate-600 border border-slate-500 rounded px-3 py-2 text-white"
-                  />
-                </div>
-
-                <div className="flex gap-2">
-                  <button
-                    onClick={editingId ? handleUpdateTestCase : handleAddTestCase}
-                    disabled={submitting || !formData.urlTemplate.trim() || !formData.name.trim()}
-                    className="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-slate-600 px-4 py-2 rounded font-medium transition"
-                  >
-                    {submitting ? (editingId ? "Updating..." : "Adding...") : (editingId ? "Update Test Case" : "Add Test Case")}
-                  </button>
-                  <button
-                    onClick={() => {
-                      setEditingId(null);
-                      setFormData({
-                        name: "",
-                        httpMethod: "GET",
-                        urlTemplate: "",
-                        inputJson: "",
-                        expectJson: "",
-                        score: 0,
-                      });
-                      setShowForm(false);
-                    }}
-                    className="px-4 py-2 bg-slate-600 hover:bg-slate-500 rounded font-medium transition"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {testCases.length === 0 ? (
-            <p className="text-slate-400">No test cases yet</p>
-          ) : (
-            <div className="space-y-4">
-              {testCases.map((tc) => (
-                <div key={tc.id} className="bg-slate-700 p-4 rounded-lg">
-                  <div className="flex justify-between items-start mb-2">
-                    <div className="flex-1">
-                      <p className="font-semibold">{tc.name}</p>
-                      <p className="text-sm text-slate-400">{tc.httpMethod} {tc.urlTemplate}</p>
-                      <p className="text-sm text-slate-400">Score: {tc.score}</p>
-                    </div>
-                    <div className="flex gap-2 ml-4">
-                      <button
-                        onClick={() => handleEditTestCase(tc)}
-                        disabled={submitting}
-                        className="bg-blue-600 hover:bg-blue-700 disabled:bg-slate-600 px-3 py-1 rounded text-sm transition"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => handleDeleteTestCase(tc.id)}
-                        disabled={submitting}
-                        className="bg-red-600 hover:bg-red-700 disabled:bg-slate-600 px-3 py-1 rounded text-sm transition"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </div>
-                  <details className="text-sm">
-                    <summary className="cursor-pointer text-blue-400 hover:text-blue-300">View Test Details</summary>
-                    <div className="mt-2 bg-slate-600 p-2 rounded text-xs space-y-1">
-                      {tc.inputJson && <div><strong>Input:</strong> {tc.inputJson}</div>}
-                      {(tc.expectJson || tc.value) && <div><strong>Expected Response:</strong> {tc.expectJson || tc.value}</div>}
-                    </div>
-                  </details>
-                </div>
-              ))}
-            </div>
-          )}
+  if (error || !question) {
+    return (
+      <div style={{ padding: "40px 24px", maxWidth: "1200px", margin: "0 auto" }}>
+        <div
+          style={{
+            padding: "16px",
+            backgroundColor: "#fef2f2",
+            border: "1px solid #fecaca",
+            borderRadius: "5px",
+            color: "#dc2626",
+          }}
+        >
+          {error || "Question not found"}
         </div>
       </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: "40px 24px", maxWidth: "1200px", margin: "0 auto" }}>
+      {/* Breadcrumb */}
+      <div
+        style={{
+          fontFamily: "Inter, Arial, sans-serif",
+          fontSize: "0.875rem",
+          color: "#939084",
+          marginBottom: "16px",
+        }}
+      >
+        <Link href="/exam-sessions" style={{ color: "#939084", textDecoration: "none" }}>
+          Exam Sessions
+        </Link>
+        <span style={{ margin: "0 8px" }}>/</span>
+        <Link
+          href={`/assignments/${assignmentId}`}
+          style={{ color: "#939084", textDecoration: "none" }}
+        >
+          Assignment
+        </Link>
+        <span style={{ margin: "0 8px" }}>/</span>
+        <span style={{ color: "#201515" }}>Question</span>
+      </div>
+
+      {/* Page Header */}
+      <div style={{ marginBottom: "32px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
+          <StatusBadge
+            status={question.type === 0 ? "Api" : "Razor"}
+            variant={question.type === 0 ? "api" : "razor"}
+          />
+          <h1
+            style={{
+              fontFamily: "Inter, Arial, sans-serif",
+              fontSize: "2rem",
+              fontWeight: 500,
+              lineHeight: 1.1,
+              color: "#201515",
+              margin: 0,
+            }}
+          >
+            {question.title}
+          </h1>
+        </div>
+        <div
+          style={{
+            fontFamily: "Inter, Arial, sans-serif",
+            fontSize: "0.9375rem",
+            color: "#36342e",
+          }}
+        >
+          Max Score: <strong>{question.maxScore} pts</strong> &middot; Folder:{" "}
+          <code
+            style={{
+              backgroundColor: "#eceae3",
+              padding: "1px 6px",
+              borderRadius: "3px",
+            }}
+          >
+            {question.artifactFolderName}
+          </code>
+        </div>
+      </div>
+
+      {/* ===== Score Tracker ===== */}
+      <div
+        style={{
+          backgroundColor: isOverBudget ? "#fef2f2" : isExactMatch ? "#f0fdf4" : "#fffdf9",
+          border: `1px solid ${isOverBudget ? "#fecaca" : isExactMatch ? "#bbf7d0" : "#eceae3"}`,
+          borderRadius: "8px",
+          padding: "20px 24px",
+          marginBottom: "24px",
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+          <span style={{ fontFamily: "Inter, Arial, sans-serif", fontSize: "0.875rem", fontWeight: 600, color: "#36342e" }}>
+            Score Allocation
+          </span>
+          <div style={{ display: "flex", gap: "16px", fontFamily: "Inter, Arial, sans-serif", fontSize: "0.8125rem" }}>
+            <span style={{ color: "#939084" }}>
+              Used: <strong style={{ color: isOverBudget ? "#dc2626" : "#201515" }}>{totalUsedScore}</strong>
+            </span>
+            <span style={{ color: "#939084" }}>
+              Remaining: <strong style={{ color: remainingScore < 0 ? "#dc2626" : remainingScore === 0 ? "#166534" : "#c2410c" }}>{remainingScore}</strong>
+            </span>
+            <span style={{ color: "#939084" }}>
+              Max: <strong style={{ color: "#201515" }}>{maxScore}</strong>
+            </span>
+          </div>
+        </div>
+
+        {/* Progress Bar */}
+        <div
+          style={{
+            height: "8px",
+            backgroundColor: "#eceae3",
+            borderRadius: "4px",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              height: "100%",
+              width: `${scorePercentage}%`,
+              backgroundColor: isOverBudget ? "#dc2626" : isExactMatch ? "#16a34a" : "#ff4f00",
+              borderRadius: "4px",
+              transition: "width 0.3s ease, background-color 0.3s ease",
+            }}
+          />
+        </div>
+
+        {/* Status messages */}
+        {isOverBudget && (
+          <div style={{ marginTop: "10px", fontFamily: "Inter, Arial, sans-serif", fontSize: "0.8125rem", color: "#dc2626", fontWeight: 600 }}>
+            ⚠ Total score ({totalUsedScore}) exceeds max score ({maxScore}). Remove or reduce test case scores.
+          </div>
+        )}
+        {!isOverBudget && !isExactMatch && totalUsedScore > 0 && (
+          <div style={{ marginTop: "10px", fontFamily: "Inter, Arial, sans-serif", fontSize: "0.8125rem", color: "#c2410c", fontWeight: 500 }}>
+            ℹ Total must equal max score ({maxScore}) before grading. {remainingScore} pts remaining.
+          </div>
+        )}
+        {isExactMatch && testCases.length > 0 && (
+          <div style={{ marginTop: "10px", fontFamily: "Inter, Arial, sans-serif", fontSize: "0.8125rem", color: "#166534", fontWeight: 600 }}>
+            ✓ Score allocation complete — all {maxScore} pts assigned.
+          </div>
+        )}
+      </div>
+
+      {/* Test Cases Header */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: "20px",
+        }}
+      >
+        <h2
+          style={{
+            fontFamily: "Inter, Arial, sans-serif",
+            fontSize: "1.25rem",
+            fontWeight: 600,
+            color: "#201515",
+            margin: 0,
+          }}
+        >
+          Test Cases ({testCases.length})
+        </h2>
+        <button
+          onClick={() => setShowCreate(true)}
+          disabled={remainingScore <= 0}
+          style={{
+            padding: "8px 16px",
+            fontFamily: "Inter, Arial, sans-serif",
+            fontSize: "0.875rem",
+            fontWeight: 600,
+            color: "#fffefb",
+            backgroundColor: remainingScore <= 0 ? "#939084" : "#ff4f00",
+            border: `1px solid ${remainingScore <= 0 ? "#939084" : "#ff4f00"}`,
+            borderRadius: "4px",
+            cursor: remainingScore <= 0 ? "not-allowed" : "pointer",
+            opacity: remainingScore <= 0 ? 0.6 : 1,
+          }}
+        >
+          + New Test Case
+        </button>
+      </div>
+
+      {showCreate && (
+        <div
+          style={{
+            backgroundColor: "#fffefb",
+            border: "1px solid #c5c0b1",
+            borderRadius: "5px",
+            padding: "24px",
+            marginBottom: "24px",
+          }}
+        >
+          <h3
+            style={{
+              fontFamily: "Inter, Arial, sans-serif",
+              fontSize: "1.125rem",
+              fontWeight: 600,
+              color: "#201515",
+              marginBottom: "16px",
+            }}
+          >
+            Add Test Case via JSON
+          </h3>
+
+          {/* Score budget reminder */}
+          <div
+            style={{
+              padding: "10px 14px",
+              backgroundColor: "#fff8f0",
+              border: "1px solid #fed7aa",
+              borderRadius: "5px",
+              marginBottom: "16px",
+              fontFamily: "Inter, Arial, sans-serif",
+              fontSize: "0.8125rem",
+              color: "#c2410c",
+            }}
+          >
+            Remaining score budget: <strong>{remainingScore}</strong> pts &middot; Paste a single JSON object or an array of test cases
+          </div>
+
+          {/* JSON textarea */}
+          <div style={{ marginBottom: "16px" }}>
+            <label
+              style={{
+                display: "block",
+                fontFamily: "Inter, Arial, sans-serif",
+                fontSize: "0.75rem",
+                fontWeight: 600,
+                color: "#939084",
+                marginBottom: "6px",
+              }}
+            >
+              JSON Input
+            </label>
+            <textarea
+              value={jsonInput}
+              onChange={(e) => {
+                setJsonInput(e.target.value);
+                if (jsonError) setJsonError(null);
+              }}
+              placeholder={jsonPlaceholder}
+              spellCheck={false}
+              style={{
+                width: "100%",
+                minHeight: "280px",
+                backgroundColor: "#1e1e1e",
+                color: "#d4d4d4",
+                border: jsonError ? "2px solid #dc2626" : "1px solid #c5c0b1",
+                borderRadius: "6px",
+                padding: "16px",
+                fontFamily: "'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace",
+                fontSize: "0.8125rem",
+                lineHeight: "1.6",
+                outline: "none",
+                boxSizing: "border-box",
+                resize: "vertical",
+                tabSize: 2,
+              }}
+              onFocus={(e) => { if (!jsonError) e.target.style.borderColor = "#ff4f00"; }}
+              onBlur={(e) => { if (!jsonError) e.target.style.borderColor = "#c5c0b1"; }}
+            />
+          </div>
+
+          {/* JSON error */}
+          {jsonError && (
+            <div
+              style={{
+                padding: "10px 14px",
+                backgroundColor: "#fef2f2",
+                border: "1px solid #fecaca",
+                borderRadius: "5px",
+                marginBottom: "16px",
+                fontFamily: "Inter, Arial, sans-serif",
+                fontSize: "0.8125rem",
+                color: "#dc2626",
+                fontWeight: 500,
+              }}
+            >
+              ⚠ {jsonError}
+            </div>
+          )}
+
+          {/* Supported fields hint */}
+          <details style={{ marginBottom: "16px" }}>
+            <summary
+              style={{
+                fontFamily: "Inter, Arial, sans-serif",
+                fontSize: "0.75rem",
+                fontWeight: 600,
+                color: "#939084",
+                cursor: "pointer",
+                userSelect: "none",
+              }}
+            >
+              Supported fields reference ({isRazor ? "Razor" : "API"})
+            </summary>
+            <div
+              style={{
+                marginTop: "8px",
+                padding: "12px 16px",
+                backgroundColor: "#f5f4f0",
+                borderRadius: "5px",
+                fontFamily: "'Cascadia Code', 'Consolas', monospace",
+                fontSize: "0.75rem",
+                lineHeight: "1.8",
+                color: "#36342e",
+              }}
+            >
+              <div><strong>httpMethod</strong> — GET, POST, PUT, DELETE <em>(default: GET)</em></div>
+              <div><strong>urlTemplate</strong> — e.g. {isRazor ? "/Instructor" : "/api/students"} <em>(required)</em></div>
+              <div><strong>expectedStatus</strong> — HTTP status code <em>(default: 200)</em></div>
+              {isRazor ? (
+                <>
+                  <div><strong>elementId</strong> — HTML element ID to check for existence</div>
+                  <div><strong>elementText</strong> — expected text content of the element</div>
+                  <div><strong>selector</strong> — CSS selector (e.g. &quot;table tbody tr&quot;)</div>
+                  <div><strong>selectorMinCount</strong> — minimum number of matching elements</div>
+                </>
+              ) : (
+                <>
+                  <div><strong>expectedBody</strong> — expected response body (object or array)</div>
+                  <div><strong>requestBody</strong> — request body for POST/PUT</div>
+                </>
+              )}
+              <div><strong>score</strong> — points for this test case <em>(default: 1)</em></div>
+              <div><strong>name</strong> — display name <em>(auto: METHOD /url)</em></div>
+            </div>
+          </details>
+
+          <div style={{ display: "flex", gap: "8px" }}>
+            <button
+              type="button"
+              onClick={handleCreateFromJson}
+              disabled={creating || !jsonInput.trim()}
+              style={{
+                padding: "8px 16px",
+                fontFamily: "Inter, Arial, sans-serif",
+                fontSize: "0.875rem",
+                fontWeight: 600,
+                color: "#fffefb",
+                backgroundColor: (creating || !jsonInput.trim()) ? "#939084" : "#ff4f00",
+                border: `1px solid ${(creating || !jsonInput.trim()) ? "#939084" : "#ff4f00"}`,
+                borderRadius: "4px",
+                cursor: (creating || !jsonInput.trim()) ? "not-allowed" : "pointer",
+                opacity: (creating || !jsonInput.trim()) ? 0.6 : 1,
+              }}
+            >
+              {creating ? "Creating..." : "Add Test Case(s)"}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setShowCreate(false); setJsonError(null); setJsonInput(''); }}
+              style={{
+                padding: "8px 16px",
+                fontFamily: "Inter, Arial, sans-serif",
+                fontSize: "0.875rem",
+                fontWeight: 600,
+                color: "#36342e",
+                backgroundColor: "#eceae3",
+                border: "1px solid #c5c0b1",
+                borderRadius: "8px",
+                cursor: "pointer",
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {testCases.length === 0 ? (
+        <EmptyState
+          title="No test cases yet"
+          description="Add test cases to define grading criteria."
+        />
+      ) : (
+        <div
+          style={{
+            display: "grid",
+            gap: "12px",
+          }}
+        >
+          {testCases.map((tc, idx) => (
+            <div
+              key={tc.id}
+              style={{
+                backgroundColor: "#fffefb",
+                border: "1px solid #c5c0b1",
+                borderRadius: "5px",
+                padding: "16px 20px",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "flex-start",
+                }}
+              >
+                <div style={{ flex: 1 }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                      marginBottom: "4px",
+                    }}
+                  >
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        width: "22px",
+                        height: "22px",
+                        borderRadius: "50%",
+                        backgroundColor: "#eceae3",
+                        fontFamily: "Inter, Arial, sans-serif",
+                        fontSize: "0.6875rem",
+                        fontWeight: 700,
+                        color: "#36342e",
+                      }}
+                    >
+                      {idx + 1}
+                    </span>
+                    <span
+                      style={{
+                        display: "inline-block",
+                        padding: "2px 8px",
+                        borderRadius: "4px",
+                        fontFamily: "Inter, Arial, sans-serif",
+                        fontSize: "0.75rem",
+                        fontWeight: 700,
+                        backgroundColor:
+                          tc.httpMethod === "GET"
+                            ? "#f0f9ff"
+                            : tc.httpMethod === "POST"
+                              ? "#f0fdf4"
+                              : tc.httpMethod === "PUT"
+                                ? "#fff8f0"
+                                : "#fef2f2",
+                        color:
+                          tc.httpMethod === "GET"
+                            ? "#0369a1"
+                            : tc.httpMethod === "POST"
+                              ? "#166534"
+                              : tc.httpMethod === "PUT"
+                                ? "#c2410c"
+                                : "#dc2626",
+                      }}
+                    >
+                      {tc.httpMethod}
+                    </span>
+                    <span
+                      style={{
+                        fontFamily: "Inter, Arial, sans-serif",
+                        fontSize: "0.9375rem",
+                        fontWeight: 600,
+                        color: "#201515",
+                      }}
+                    >
+                      {tc.name}
+                    </span>
+                  </div>
+                  <code
+                    style={{
+                      fontFamily: "monospace",
+                      fontSize: "0.8125rem",
+                      color: "#36342e",
+                      backgroundColor: "#eceae3",
+                      padding: "1px 6px",
+                      borderRadius: "3px",
+                    }}
+                  >
+                    {tc.urlTemplate}
+                  </code>
+                  <span
+                    style={{
+                      marginLeft: "12px",
+                      fontFamily: "Inter, Arial, sans-serif",
+                      fontSize: "0.8125rem",
+                      color: "#939084",
+                    }}
+                  >
+                    Status: {tc.expectedStatus} &middot;{" "}
+                    <strong style={{ color: "#ff4f00" }}>{tc.score} pts</strong>
+                  </span>
+                </div>
+                <button
+                  onClick={() => handleDeleteTestCase(tc.id)}
+                  disabled={deleting === tc.id}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: "#dc2626",
+                    cursor: deleting === tc.id ? "not-allowed" : "pointer",
+                    fontFamily: "Inter, Arial, sans-serif",
+                    fontSize: "0.8125rem",
+                    fontWeight: 600,
+                    opacity: deleting === tc.id ? 0.5 : 1,
+                  }}
+                >
+                  {deleting === tc.id ? "..." : "Delete"}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

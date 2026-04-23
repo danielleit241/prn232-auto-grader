@@ -1,170 +1,432 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import * as React from "react";
 import Link from "next/link";
 import { api } from "@/lib";
-import type { Assignment, Submission } from "@/types";
+import type { ExamSession, AssignmentSummary } from "@/types";
+import { StatusBadge } from "@/components/ui/StatusBadge";
+import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
+import { EmptyState } from "@/components/ui/EmptyState";
+
+interface DashboardStats {
+  totalSessions: number;
+  totalAssignments: number;
+  recentSessions: ExamSession[];
+  recentAssignments: AssignmentSummary[];
+}
 
 export default function DashboardPage() {
-  const [assignments, setAssignments] = useState<Assignment[]>([]);
-  const [submissions, setSubmissions] = useState<Submission[]>([]);
-  const [stats, setStats] = useState({
-    totalAssignments: 0,
-    totalSubmissions: 0,
-    completedSubmissions: 0,
-    pendingGrading: 0,
-  });
-  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = React.useState<DashboardStats | null>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
 
-  useEffect(() => {
+  React.useEffect(() => {
     loadDashboard();
   }, []);
 
   const loadDashboard = async () => {
     try {
-      const assignRes = await api.getAssignments();
+      setLoading(true);
+      const [sessionsRes, assignmentsRes] = await Promise.all([
+        api.getExamSessions(),
+        api.getAssignments(),
+      ]);
 
-      let allAssignments: Assignment[] = [];
-      let allSubmissions: Submission[] = [];
-
-      if (assignRes.status && assignRes.data) {
-        allAssignments = assignRes.data;
-        setAssignments(allAssignments.slice(0, 5));
-
-        // Load submissions for all assignments
-        const subPromises = allAssignments.map((a) =>
-          api.getSubmissionsByAssignment(a.id)
-        );
-        const subResponses = await Promise.all(subPromises);
-
-        subResponses.forEach((res) => {
-          if (res.status && res.data) {
-            allSubmissions = [...allSubmissions, ...res.data];
-          }
+      if (sessionsRes.status && assignmentsRes.status) {
+        setStats({
+          totalSessions: sessionsRes.data?.length ?? 0,
+          totalAssignments: assignmentsRes.data?.length ?? 0,
+          recentSessions: (sessionsRes.data ?? []).slice(0, 5),
+          recentAssignments: (assignmentsRes.data ?? []).slice(0, 5),
         });
-
-        setSubmissions(allSubmissions.slice(0, 5));
+      } else {
+        setError(sessionsRes.message || "Failed to load dashboard");
       }
-
-      setStats({
-        totalAssignments: allAssignments.length,
-        totalSubmissions: allSubmissions.length,
-        completedSubmissions: allSubmissions.filter((s) => s.status === "Done" || s.status === 2).length,
-        pendingGrading: allSubmissions.filter((s) => s.status === "Pending" || s.status === "Grading" || s.status === 0 || s.status === 1).length,
-      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error loading dashboard");
     } finally {
       setLoading(false);
     }
   };
 
-  if (loading) return <div className="min-h-screen bg-slate-900 text-white p-8">Loading...</div>;
+  if (loading) {
+    return (
+      <div style={{ padding: "80px 24px" }}>
+        <LoadingSpinner fullPage label="Loading dashboard..." />
+      </div>
+    );
+  }
 
-  return (
-    <div className="min-h-screen bg-slate-900 text-white p-8">
-      <div className="max-w-6xl mx-auto">
-        <h1 className="text-3xl font-bold mb-8">Dashboard</h1>
-
-        {/* Stats */}
-        <div className="grid grid-cols-4 gap-4 mb-8">
-          <div className="bg-slate-800 p-6 rounded-lg border border-slate-700">
-            <p className="text-slate-400 text-sm">Total Assignments</p>
-            <p className="text-3xl font-bold text-blue-400">{stats.totalAssignments}</p>
-          </div>
-          <div className="bg-slate-800 p-6 rounded-lg border border-slate-700">
-            <p className="text-slate-400 text-sm">Total Submissions</p>
-            <p className="text-3xl font-bold text-blue-400">{stats.totalSubmissions}</p>
-          </div>
-          <div className="bg-slate-800 p-6 rounded-lg border border-slate-700">
-            <p className="text-slate-400 text-sm">Completed</p>
-            <p className="text-3xl font-bold text-green-400">{stats.completedSubmissions}</p>
-          </div>
-          <div className="bg-slate-800 p-6 rounded-lg border border-slate-700">
-            <p className="text-slate-400 text-sm">Pending Grading</p>
-            <p className="text-3xl font-bold text-yellow-400">{stats.pendingGrading}</p>
-          </div>
-        </div>
-
-        {/* Quick Actions */}
-        <div className="grid grid-cols-4 gap-4 mb-8">
-          <Link href="/assignments" className="bg-blue-600 hover:bg-blue-700 p-4 rounded-lg text-center font-medium transition">
-            📚 Browse Assignments
-          </Link>
-          <Link href="/assignments/create" className="bg-blue-600 hover:bg-blue-700 p-4 rounded-lg text-center font-medium transition">
-            ➕ Create Assignment
-          </Link>
-          <Link href="/grading" className="bg-red-600 hover:bg-red-700 p-4 rounded-lg text-center font-medium transition">
-            ✅ Grade Submissions
-          </Link>
-          <Link href="/exports" className="bg-purple-600 hover:bg-purple-700 p-4 rounded-lg text-center font-medium transition">
-            📊 Export Results
-          </Link>
-        </div>
-
-        <div className="grid grid-cols-2 gap-8">
-          {/* Recent Assignments */}
-          <div className="bg-slate-800 p-6 rounded-lg border border-slate-700">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold">Recent Assignments</h2>
-              <Link href="/assignments" className="text-blue-400 hover:text-blue-300 text-sm">
-                View All
-              </Link>
-            </div>
-            {assignments.length === 0 ? (
-              <p className="text-slate-400">No assignments yet</p>
-            ) : (
-              <div className="space-y-3">
-                {assignments.map((a) => (
-                  <Link
-                    key={a.id}
-                    href={`/assignments/${a.id}`}
-                    className="block p-3 bg-slate-700 rounded hover:bg-slate-700/80 transition"
-                  >
-                    <p className="font-semibold">{a.title}</p>
-                    <p className="text-sm text-slate-400 line-clamp-1">{a.description}</p>
-                  </Link>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Recent Submissions */}
-          <div className="bg-slate-800 p-6 rounded-lg border border-slate-700">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold">Recent Submissions</h2>
-              <Link href="/submissions" className="text-blue-400 hover:text-blue-300 text-sm">
-                View All
-              </Link>
-            </div>
-            {submissions.length === 0 ? (
-              <p className="text-slate-400">No submissions yet</p>
-            ) : (
-              <div className="space-y-3">
-                {submissions.map((s) => (
-                  <Link
-                    key={s.id}
-                    href={`/submissions/${s.id}`}
-                    className="block p-3 bg-slate-700 rounded hover:bg-slate-700/80 transition"
-                  >
-                    <div className="flex justify-between items-center">
-                      <div>
-                        <p className="font-semibold">{s.studentCode}</p>
-                        <p className="text-sm text-slate-400">{new Date(s.createdAt).toLocaleDateString()}</p>
-                      </div>
-                      <span className={`px-2 py-1 rounded text-xs font-medium ${
-                        s.status === "Done" ? "bg-green-500/20 text-green-400" :
-                        s.status === "Grading" ? "bg-yellow-500/20 text-yellow-400" :
-                        "bg-slate-600 text-slate-300"
-                      }`}>
-                        {s.status}
-                      </span>
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            )}
-          </div>
+  if (error) {
+    return (
+      <div style={{ padding: "40px 24px", maxWidth: "1200px", margin: "0 auto" }}>
+        <div
+          style={{
+            padding: "16px",
+            backgroundColor: "#fef2f2",
+            border: "1px solid #fecaca",
+            borderRadius: "5px",
+            color: "#dc2626",
+            fontFamily: "Inter, Arial, sans-serif",
+          }}
+        >
+          {error}
         </div>
       </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: "40px 24px", maxWidth: "1200px", margin: "0 auto" }}>
+      {/* Page Header */}
+      <div style={{ marginBottom: "48px" }}>
+        <p
+          style={{
+            fontFamily: "Inter, Arial, sans-serif",
+            fontSize: "0.875rem",
+            fontWeight: 600,
+            textTransform: "uppercase",
+            letterSpacing: "0.5px",
+            color: "#939084",
+            marginBottom: "8px",
+          }}
+        >
+          01 / Dashboard
+        </p>
+        <h1
+          style={{
+            fontFamily: "Inter, Arial, sans-serif",
+            fontSize: "2.5rem",
+            fontWeight: 500,
+            lineHeight: 1.1,
+            color: "#201515",
+            margin: 0,
+          }}
+        >
+          Dashboard
+        </h1>
+      </div>
+
+      {/* Stats Cards */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(2, 1fr)",
+          gap: "24px",
+          marginBottom: "48px",
+        }}
+        className="stats-grid"
+      >
+        <div
+          style={{
+            backgroundColor: "#fffefb",
+            border: "1px solid #c5c0b1",
+            borderRadius: "5px",
+            padding: "32px",
+          }}
+        >
+          <p
+            style={{
+              fontFamily: "Inter, Arial, sans-serif",
+              fontSize: "0.875rem",
+              fontWeight: 600,
+              color: "#939084",
+              marginBottom: "8px",
+              textTransform: "uppercase",
+              letterSpacing: "0.5px",
+            }}
+          >
+            Exam Sessions
+          </p>
+          <p
+            style={{
+              fontFamily: "Inter, Arial, sans-serif",
+              fontSize: "3rem",
+              fontWeight: 500,
+              lineHeight: 1,
+              color: "#201515",
+            }}
+          >
+            {stats?.totalSessions ?? 0}
+          </p>
+          <Link
+            href="/exam-sessions"
+            style={{
+              display: "inline-block",
+              marginTop: "16px",
+              fontFamily: "Inter, Arial, sans-serif",
+              fontSize: "0.875rem",
+              fontWeight: 600,
+              color: "#ff4f00",
+              textDecoration: "none",
+            }}
+          >
+            View all &rarr;
+          </Link>
+        </div>
+
+        <div
+          style={{
+            backgroundColor: "#fffefb",
+            border: "1px solid #c5c0b1",
+            borderRadius: "5px",
+            padding: "32px",
+          }}
+        >
+          <p
+            style={{
+              fontFamily: "Inter, Arial, sans-serif",
+              fontSize: "0.875rem",
+              fontWeight: 600,
+              color: "#939084",
+              marginBottom: "8px",
+              textTransform: "uppercase",
+              letterSpacing: "0.5px",
+            }}
+          >
+            Assignments
+          </p>
+          <p
+            style={{
+              fontFamily: "Inter, Arial, sans-serif",
+              fontSize: "3rem",
+              fontWeight: 500,
+              lineHeight: 1,
+              color: "#201515",
+            }}
+          >
+            {stats?.totalAssignments ?? 0}
+          </p>
+          <Link
+            href="/exam-sessions"
+            style={{
+              display: "inline-block",
+              marginTop: "16px",
+              fontFamily: "Inter, Arial, sans-serif",
+              fontSize: "0.875rem",
+              fontWeight: 600,
+              color: "#ff4f00",
+              textDecoration: "none",
+            }}
+          >
+            View all &rarr;
+          </Link>
+        </div>
+      </div>
+
+      {/* Quick Actions */}
+      <div
+        style={{
+          display: "flex",
+          gap: "16px",
+          marginBottom: "48px",
+          flexWrap: "wrap",
+        }}
+      >
+        <Link
+          href="/exam-sessions/create"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "12px 20px",
+            fontFamily: "Inter, Arial, sans-serif",
+            fontSize: "1rem",
+            fontWeight: 600,
+            color: "#fffefb",
+            backgroundColor: "#ff4f00",
+            border: "1px solid #ff4f00",
+            borderRadius: "4px",
+            textDecoration: "none",
+            transition: "background-color 0.15s ease",
+          }}
+        >
+          + New Exam Session
+        </Link>
+        <Link
+          href="/submissions"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "20px 24px",
+            fontFamily: "Inter, Arial, sans-serif",
+            fontSize: "1rem",
+            fontWeight: 600,
+            color: "#36342e",
+            backgroundColor: "#eceae3",
+            border: "1px solid #c5c0b1",
+            borderRadius: "8px",
+            textDecoration: "none",
+            transition: "all 0.15s ease",
+          }}
+        >
+          View Submissions
+        </Link>
+        <Link
+          href="/exports"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "20px 24px",
+            fontFamily: "Inter, Arial, sans-serif",
+            fontSize: "1rem",
+            fontWeight: 600,
+            color: "#36342e",
+            backgroundColor: "#eceae3",
+            border: "1px solid #c5c0b1",
+            borderRadius: "8px",
+            textDecoration: "none",
+            transition: "all 0.15s ease",
+          }}
+        >
+          Export Results
+        </Link>
+      </div>
+
+      {/* Recent Exam Sessions */}
+      <div style={{ marginBottom: "48px" }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: "16px",
+          }}
+        >
+          <h2
+            style={{
+              fontFamily: "Inter, Arial, sans-serif",
+              fontSize: "1.5rem",
+              fontWeight: 600,
+              letterSpacing: "-0.48px",
+              color: "#201515",
+              margin: 0,
+            }}
+          >
+            Recent Exam Sessions
+          </h2>
+          <Link
+            href="/exam-sessions"
+            style={{
+              fontFamily: "Inter, Arial, sans-serif",
+              fontSize: "0.875rem",
+              fontWeight: 600,
+              color: "#ff4f00",
+              textDecoration: "none",
+            }}
+          >
+            View all
+          </Link>
+        </div>
+
+        {stats?.recentSessions && stats.recentSessions.length > 0 ? (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
+              gap: "16px",
+            }}
+          >
+            {stats.recentSessions.map((session) => (
+              <Link
+                key={session.id}
+                href={`/exam-sessions/${session.id}`}
+                style={{
+                  display: "block",
+                  backgroundColor: "#fffefb",
+                  border: "1px solid #c5c0b1",
+                  borderRadius: "5px",
+                  padding: "20px",
+                  textDecoration: "none",
+                  transition: "border-color 0.15s ease",
+                }}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLElement).style.borderColor = "#b5b2aa";
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLElement).style.borderColor = "#c5c0b1";
+                }}
+              >
+                <div
+                  style={{
+                    fontFamily: "Inter, Arial, sans-serif",
+                    fontSize: "1.125rem",
+                    fontWeight: 600,
+                    color: "#201515",
+                    marginBottom: "4px",
+                  }}
+                >
+                  {session.title}
+                </div>
+                {session.description && (
+                  <p
+                    style={{
+                      fontFamily: "Inter, Arial, sans-serif",
+                      fontSize: "0.875rem",
+                      color: "#939084",
+                      marginBottom: "12px",
+                      display: "-webkit-box",
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: "vertical",
+                      overflow: "hidden",
+                    }}
+                  >
+                    {session.description}
+                  </p>
+                )}
+                <div
+                  style={{
+                    fontFamily: "Inter, Arial, sans-serif",
+                    fontSize: "0.8125rem",
+                    color: "#939084",
+                  }}
+                >
+                  {new Date(session.createdAt).toLocaleDateString("vi-VN", {
+                    day: "2-digit",
+                    month: "short",
+                    year: "numeric",
+                  })}
+                </div>
+              </Link>
+            ))}
+          </div>
+        ) : (
+          <EmptyState
+            title="No exam sessions yet"
+            description="Create your first exam session to start organizing assignments and grading."
+            action={
+              <Link
+                href="/exam-sessions/create"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  padding: "8px 16px",
+                  fontFamily: "Inter, Arial, sans-serif",
+                  fontSize: "0.875rem",
+                  fontWeight: 600,
+                  color: "#fffefb",
+                  backgroundColor: "#ff4f00",
+                  border: "1px solid #ff4f00",
+                  borderRadius: "4px",
+                  textDecoration: "none",
+                }}
+              >
+                + New Exam Session
+              </Link>
+            }
+          />
+        )}
+      </div>
+
+      <style>{`
+        @media (max-width: 640px) {
+          .stats-grid {
+            grid-template-columns: 1fr !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }

@@ -143,6 +143,9 @@ public class TestCaseService(IUnitOfWork unitOfWork) : ITestCaseService
             selector         = req.Selector,
             selectorText     = req.SelectorText,
             selectorMinCount = req.SelectorMinCount,
+            body             = req.ExpectedBody,
+            elementId        = req.ElementId,
+            elementText      = req.ElementText,
         }, SerializerOpts);
 
     private static TestCaseDto Map(TestCase entity)
@@ -190,6 +193,15 @@ public class TestCaseService(IUnitOfWork unitOfWork) : ITestCaseService
 
             if (root.TryGetProperty("selectorMinCount", out var smc) && smc.ValueKind != JsonValueKind.Null)
                 dto.SelectorMinCount = smc.GetInt32();
+
+            if (root.TryGetProperty("body", out var body) && body.ValueKind != JsonValueKind.Null)
+                dto.ExpectedBody = body.Clone();
+
+            if (root.TryGetProperty("elementId", out var eid) && eid.ValueKind != JsonValueKind.Null)
+                dto.ElementId = eid.GetString();
+
+            if (root.TryGetProperty("elementText", out var etxt) && etxt.ValueKind != JsonValueKind.Null)
+                dto.ElementText = etxt.GetString();
         }
         catch { /* ignore malformed stored JSON */ }
 

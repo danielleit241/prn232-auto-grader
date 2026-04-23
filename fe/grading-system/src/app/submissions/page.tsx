@@ -1,177 +1,336 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import * as React from "react";
 import Link from "next/link";
 import { api } from "@/lib";
 import type { Submission } from "@/types";
+import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
+import { StatusBadge } from "@/components/ui/StatusBadge";
+import { EmptyState } from "@/components/ui/EmptyState";
 
 export default function SubmissionsPage() {
-  const [submissions, setSubmissions] = useState<Submission[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<"all" | "pending" | "grading" | "done">("all");
-  const [deleting, setDeleting] = useState<string | null>(null);
+  const [submissions, setSubmissions] = React.useState<Submission[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+  const [filterAssignmentId, setFilterAssignmentId] = React.useState("");
+  const [assignments, setAssignments] = React.useState<
+    { id: string; code: string }[]
+  >([]);
 
-  useEffect(() => {
+  React.useEffect(() => {
+    loadAssignments();
     loadSubmissions();
-  }, [filter]);
+  }, []);
+
+  const loadAssignments = async () => {
+    const res = await api.getAssignments();
+    if (res.status && res.data) {
+      setAssignments(res.data.map((a) => ({ id: a.id, code: a.code })));
+    }
+  };
 
   const loadSubmissions = async () => {
     try {
       setLoading(true);
       setError(null);
-
-      // Load all assignments first
-      const assignRes = await api.getAssignments();
-      let allSubmissions: Submission[] = [];
-
-      if (assignRes.status && assignRes.data) {
-        // Load submissions for each assignment
-        const subPromises = assignRes.data.map((a) =>
-          api.getSubmissionsByAssignment(a.id)
-        );
-        const subResponses = await Promise.all(subPromises);
-
-        subResponses.forEach((res) => {
-          if (res.status && res.data) {
-            allSubmissions = [...allSubmissions, ...res.data];
-          }
-        });
+      if (filterAssignmentId) {
+        const res = await api.getSubmissionsByAssignment(filterAssignmentId);
+        if (res.status && res.data) {
+          setSubmissions(res.data);
+        } else {
+          setError(res.message || "Failed to load");
+        }
+      } else {
+        // Load from all assignments — fetch each assignment's submissions
+        const allSubs: Submission[] = [];
+        const assRes = await api.getAssignments();
+        if (assRes.status && assRes.data) {
+          await Promise.all(
+            assRes.data.map(async (a) => {
+              const res = await api.getSubmissionsByAssignment(a.id);
+              if (res.status && res.data) {
+                allSubs.push(...res.data);
+              }
+            })
+          );
+          // Sort by createdAt desc
+          allSubs.sort(
+            (a, b) =>
+              new Date(b.createdAt || 0).getTime() -
+              new Date(a.createdAt || 0).getTime()
+          );
+          setSubmissions(allSubs);
+        }
       }
-
-      let filtered = allSubmissions;
-
-      if (filter !== "all") {
-        const filterMap: Record<string, number> = {
-          pending: 0,
-          grading: 1,
-          done: 2,
-        };
-        filtered = filtered.filter((s) => s.status === filterMap[filter]);
-      }
-
-      setSubmissions(filtered);
     } catch (err) {
-      setError("Failed to load submissions");
+      setError(err instanceof Error ? err.message : "Error loading");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDeleteSubmission = async (submissionId: string) => {
-    if (!confirm("Are you sure you want to delete this submission? This action cannot be undone.")) return;
-
+  const handleDelete = async (submissionId: string) => {
+    if (!confirm("Delete this submission?")) return;
     try {
-      setDeleting(submissionId);
       const res = await api.deleteSubmission(submissionId);
       if (res.status) {
         setSubmissions(submissions.filter((s) => s.id !== submissionId));
-      } else {
-        setError(res.message || "Failed to delete submission");
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error deleting submission");
-    } finally {
-      setDeleting(null);
+    } catch {
+      // ignore
     }
   };
 
-  if (loading) return <div className="min-h-screen bg-slate-900 text-white p-8">Loading...</div>;
+  if (loading) {
+    return (
+      <div style={{ padding: "80px 24px" }}>
+        <LoadingSpinner fullPage label="Loading submissions..." />
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white p-8">
-      <div className="max-w-6xl mx-auto">
-        <div className="flex justify-between items-center mb-8">
-          <div>
-            <Link href="/assignments" className="text-blue-400 hover:text-blue-300 mb-4 inline-block">
-              ← Back to Assignments
-            </Link>
-            <h1 className="text-3xl font-bold">All Submissions</h1>
-          </div>
-          <Link href="/assignments" className="bg-green-600 hover:bg-green-700 px-6 py-3 rounded-lg font-medium text-lg">
-            📤 Upload New Submission
-          </Link>
+    <div style={{ padding: "40px 24px", maxWidth: "1200px", margin: "0 auto" }}>
+      {/* Page Header */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          marginBottom: "32px",
+          flexWrap: "wrap",
+          gap: "16px",
+        }}
+      >
+        <div>
+          <p
+            style={{
+              fontFamily: "Inter, Arial, sans-serif",
+              fontSize: "0.875rem",
+              fontWeight: 600,
+              textTransform: "uppercase",
+              letterSpacing: "0.5px",
+              color: "#939084",
+              marginBottom: "8px",
+            }}
+          >
+            03 / Submissions
+          </p>
+          <h1
+            style={{
+              fontFamily: "Inter, Arial, sans-serif",
+              fontSize: "2.5rem",
+              fontWeight: 500,
+              lineHeight: 1.1,
+              color: "#201515",
+              margin: 0,
+            }}
+          >
+            Submissions
+          </h1>
         </div>
-
-        <div className="flex gap-4 mb-8">
-          {["all", "pending", "grading", "done"].map((status) => (
-            <button
-              key={status}
-              onClick={() => setFilter(status as any)}
-              className={`px-4 py-2 rounded transition capitalize ${
-                filter === status
-                  ? "bg-blue-600 text-white"
-                  : "bg-slate-700 text-slate-300 hover:bg-slate-600"
-              }`}
-            >
-              {status}
-            </button>
-          ))}
-        </div>
-
-        {error && (
-          <div className="bg-red-500/20 border border-red-500 text-red-400 px-4 py-3 rounded mb-4">
-            {error}
-          </div>
-        )}
-
-        {submissions.length === 0 ? (
-          <div className="text-center text-slate-400 py-8">No submissions found</div>
-        ) : (
-          <div className="overflow-x-auto bg-slate-800 rounded-lg border border-slate-700">
-            <table className="w-full">
-              <thead className="bg-slate-700 border-b border-slate-600">
-                <tr>
-                  <th className="px-6 py-3 text-left text-sm font-semibold">Student Code</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold">Assignment</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold">Status</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold">Score</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold">Submitted</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-700">
-                {submissions.map((s) => (
-                  <tr key={s.id} className="hover:bg-slate-700/50 transition">
-                    <td className="px-6 py-4">{s.studentCode}</td>
-                    <td className="px-6 py-4 text-slate-400">{s.assignmentId}</td>
-                    <td className="px-6 py-4">
-                      <span className={`px-2 py-1 rounded text-xs font-medium ${
-                        s.status === "Done" ? "bg-green-500/20 text-green-400" :
-                        s.status === "Grading" ? "bg-yellow-500/20 text-yellow-400" :
-                        s.status === "Error" ? "bg-red-500/20 text-red-400" :
-                        "bg-slate-600 text-slate-300"
-                      }`}>
-                        {s.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      {s.totalScore !== undefined && s.maxScore ? `${s.totalScore}/${s.maxScore}` : "-"}
-                    </td>
-                    <td className="px-6 py-4 text-slate-400 text-sm">
-                      {new Date(s.createdAt).toLocaleDateString()}
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex gap-2">
-                        <Link href={`/submissions/${s.id}`} className="text-blue-400 hover:text-blue-300">
-                          View
-                        </Link>
-                        <button
-                          onClick={() => handleDeleteSubmission(s.id)}
-                          disabled={deleting === s.id}
-                          className="text-red-400 hover:text-red-300 disabled:text-slate-500 transition"
-                        >
-                          {deleting === s.id ? "Deleting..." : "Delete"}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
       </div>
+
+      {error && (
+        <div
+          style={{
+            padding: "16px",
+            backgroundColor: "#fef2f2",
+            border: "1px solid #fecaca",
+            borderRadius: "5px",
+            color: "#dc2626",
+            marginBottom: "24px",
+          }}
+        >
+          {error}
+        </div>
+      )}
+
+      {/* Filter */}
+      <div style={{ marginBottom: "24px" }}>
+        <select
+          value={filterAssignmentId}
+          onChange={(e) => {
+            setFilterAssignmentId(e.target.value);
+            loadSubmissions();
+          }}
+          style={{
+            padding: "8px 12px",
+            backgroundColor: "#fffefb",
+            color: "#201515",
+            border: "1px solid #c5c0b1",
+            borderRadius: "5px",
+            fontFamily: "Inter, Arial, sans-serif",
+            fontSize: "0.9375rem",
+            outline: "none",
+            minWidth: "200px",
+          }}
+        >
+          <option value="">All Assignments</option>
+          {assignments.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.code}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {submissions.length === 0 ? (
+        <EmptyState
+          title="No submissions"
+          description="Upload submissions from an assignment's submissions tab."
+        />
+      ) : (
+        <div style={{ overflowX: "auto" }}>
+          <table
+            style={{
+              width: "100%",
+              borderCollapse: "collapse",
+              fontFamily: "Inter, Arial, sans-serif",
+            }}
+          >
+            <thead>
+              <tr
+                style={{
+                  borderBottom: "1px solid #c5c0b1",
+                  backgroundColor: "#eceae3",
+                }}
+              >
+                {[
+                  "Student",
+                  "Assignment",
+                  "Status",
+                  "Artifact",
+                  "Score",
+                  "Submitted",
+                  "Actions",
+                ].map((h) => (
+                  <th
+                    key={h}
+                    style={{
+                      padding: "12px 16px",
+                      textAlign: "left",
+                      fontSize: "0.75rem",
+                      fontWeight: 600,
+                      textTransform: "uppercase",
+                      letterSpacing: "0.5px",
+                      color: "#36342e",
+                    }}
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {submissions.map((s) => (
+                <tr
+                  key={s.id}
+                  style={{ borderBottom: "1px solid #eceae3" }}
+                >
+                  <td style={{ padding: "12px 16px" }}>
+                    <div style={{ fontWeight: 600, color: "#201515" }}>
+                      {s.studentCode}
+                    </div>
+                    <div style={{ fontSize: "0.8125rem", color: "#939084" }}>
+                      {s.username}
+                    </div>
+                  </td>
+                  <td style={{ padding: "12px 16px" }}>
+                    <span
+                      style={{
+                        padding: "2px 8px",
+                        backgroundColor: "#eceae3",
+                        borderRadius: "4px",
+                        fontSize: "0.8125rem",
+                        fontWeight: 600,
+                        color: "#36342e",
+                      }}
+                    >
+                      {s.assignmentId.slice(0, 8)}
+                    </span>
+                  </td>
+                  <td style={{ padding: "12px 16px" }}>
+                    <StatusBadge status={s.status} />
+                  </td>
+                  <td style={{ padding: "12px 16px" }}>
+                    <span
+                      style={{
+                        fontWeight: 600,
+                        color: s.hasArtifact ? "#166534" : "#dc2626",
+                        fontSize: "0.875rem",
+                      }}
+                    >
+                      {s.hasArtifact ? "Yes" : "No"}
+                    </span>
+                  </td>
+                  <td style={{ padding: "12px 16px" }}>
+                    {s.totalScore !== undefined ? (
+                      <span
+                        style={{
+                          fontWeight: 600,
+                          color:
+                            (s.totalScore ?? 0) / (s.maxScore ?? 1) >= 0.5
+                              ? "#166534"
+                              : "#dc2626",
+                        }}
+                      >
+                        {s.totalScore} / {s.maxScore}
+                      </span>
+                    ) : (
+                      <span style={{ color: "#939084" }}>-</span>
+                    )}
+                  </td>
+                  <td style={{ padding: "12px 16px" }}>
+                    <span style={{ color: "#939084", fontSize: "0.875rem" }}>
+                      {new Date(s.createdAt).toLocaleDateString("vi-VN", {
+                        day: "2-digit",
+                        month: "short",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </span>
+                  </td>
+                  <td style={{ padding: "12px 16px" }}>
+                    <div style={{ display: "flex", gap: "8px" }}>
+                      <Link
+                        href={`/submissions/${s.id}`}
+                        style={{
+                          padding: "4px 10px",
+                          fontSize: "0.8125rem",
+                          fontWeight: 600,
+                          color: "#fffefb",
+                          backgroundColor: "#ff4f00",
+                          border: "1px solid #ff4f00",
+                          borderRadius: "4px",
+                          textDecoration: "none",
+                        }}
+                      >
+                        View
+                      </Link>
+                      <button
+                        onClick={() => handleDelete(s.id)}
+                        style={{
+                          padding: "4px 10px",
+                          fontSize: "0.8125rem",
+                          fontWeight: 600,
+                          color: "#dc2626",
+                          backgroundColor: "transparent",
+                          border: "1px solid #c5c0b1",
+                          borderRadius: "4px",
+                          cursor: "pointer",
+                        }}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

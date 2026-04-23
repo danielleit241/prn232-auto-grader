@@ -25,9 +25,7 @@ public sealed class StorageCleanupWorker(
         var cutoff = DateTime.UtcNow - TimeSpan.FromDays(_opts.RetentionDays);
         int removed = 0;
 
-        removed += PurgeDirectories(Path.Combine(basePath, "submissions"), cutoff);
-        removed += PurgeDirectories(Path.Combine(basePath, "sandbox"),     cutoff);
-        removed += PurgeFiles(      Path.Combine(basePath, "exports"),     cutoff);
+        removed += PurgeFiles(Path.Combine(basePath, "exports"), cutoff);
 
         if (removed > 0)
             logger.LogInformation("Storage cleanup removed {Count} item(s) older than {Days}d",
