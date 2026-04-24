@@ -156,8 +156,8 @@ public class TestRunner(ILogger<TestRunner> logger, IOptions<WorkerOptions> work
     private async Task<List<TestCaseResult>> RunNewmanCasesAsync(
         List<TestCase> testCases, int port, CancellationToken ct)
     {
-        var collectionPath = Path.GetTempFileName() + ".json";
-        var reportPath = Path.GetTempFileName() + ".json";
+        var collectionPath = Path.Combine(Path.GetTempPath(), $"newman-col-{Guid.NewGuid():N}.json");
+        var reportPath     = Path.Combine(Path.GetTempPath(), $"newman-rep-{Guid.NewGuid():N}.json");
 
         try
         {
@@ -205,7 +205,7 @@ public class TestRunner(ILogger<TestRunner> logger, IOptions<WorkerOptions> work
         foreach (var tc in testCases)
         {
             var expect = DeserializeExpect(tc.ExpectJson);
-            var url = $"http://localhost:{port}{tc.UrlTemplate}";
+            var url = $"http://127.0.0.1:{port}{tc.UrlTemplate}";
 
             var requestObj = new JsonObject
             {
@@ -231,6 +231,18 @@ public class TestRunner(ILogger<TestRunner> logger, IOptions<WorkerOptions> work
                     {
                         ["mode"] = "raw",
                         ["raw"] = tc.InputJson
+                    };
+                }
+            }
+            else
+            {
+                var method = tc.HttpMethod.ToUpperInvariant();
+                if (method == "POST" || method == "PUT" || method == "PATCH")
+                {
+                    requestObj["body"] = new JsonObject
+                    {
+                        ["mode"] = "raw",
+                        ["raw"] = "{}"
                     };
                 }
             }
@@ -471,7 +483,7 @@ public class TestRunner(ILogger<TestRunner> logger, IOptions<WorkerOptions> work
     private static async Task<TestCaseResult> RunHttpTestCaseAsync(
         TestCase tc, int port, HttpClient client, CancellationToken ct)
     {
-        var url = $"http://localhost:{port}{tc.UrlTemplate}";
+        var url = $"http://127.0.0.1:{port}{tc.UrlTemplate}";
         var method = new HttpMethod(tc.HttpMethod.ToUpper());
         var request = new HttpRequestMessage(method, url);
 
@@ -481,6 +493,10 @@ public class TestRunner(ILogger<TestRunner> logger, IOptions<WorkerOptions> work
                 request.RequestUri = new Uri(url + "?" + JsonToQueryString(tc.InputJson));
             else
                 request.Content = new StringContent(tc.InputJson, Encoding.UTF8, "application/json");
+        }
+        else if (method == HttpMethod.Post || method == HttpMethod.Put || method == HttpMethod.Patch)
+        {
+            request.Content = new StringContent("{}", Encoding.UTF8, "application/json");
         }
 
         HttpResponseMessage? response = null;
