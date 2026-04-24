@@ -527,7 +527,7 @@ export default function AssignmentDetailPage() {
 
       {/* ===== SETUP TAB ===== */}
       {activeTab === "setup" && (
-        <div>
+        <div style={{ maxWidth: "640px", margin: "0 auto" }}>
           {/* Step 1: Import Participants (MUST be first) */}
           <div
             style={{
@@ -535,7 +535,6 @@ export default function AssignmentDetailPage() {
               border: hasParticipants ? "1px solid #bbf7d0" : "1px solid #ff4f00",
               borderRadius: "5px",
               padding: "32px",
-              maxWidth: "600px",
               marginBottom: "24px",
             }}
           >
@@ -581,7 +580,7 @@ export default function AssignmentDetailPage() {
 
           {/* Lock banner when no participants */}
           {!hasParticipants && (
-            <div style={{ padding: "16px 20px", backgroundColor: "#fef2f2", border: "1px solid #fecaca", borderRadius: "5px", maxWidth: "600px", marginBottom: "24px", display: "flex", alignItems: "center", gap: "10px" }}>
+            <div style={{ padding: "16px 20px", backgroundColor: "#fef2f2", border: "1px solid #fecaca", borderRadius: "5px", marginBottom: "24px", display: "flex", alignItems: "center", gap: "10px" }}>
               <Lock size={16} color="#dc2626" />
               <span style={{ fontFamily: "Inter, Arial, sans-serif", fontSize: "0.875rem", color: "#dc2626", fontWeight: 500 }}>
                 Import participants first to unlock the sections below.
@@ -597,7 +596,6 @@ export default function AssignmentDetailPage() {
               border: "1px solid #c5c0b1",
               borderRadius: "5px",
               padding: "32px",
-              maxWidth: "600px",
             }}
           >
             <h2
