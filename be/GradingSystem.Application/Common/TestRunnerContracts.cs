@@ -14,6 +14,8 @@ public class ExpectJson
     // Q2: check element existence/text by HTML id attribute
     public string? ElementId { get; set; }
     public string? ElementText { get; set; }
+    // Q2 sequential flows: extract values from JSON response into variable context
+    public Dictionary<string, string>? Extract { get; set; }
 }
 
 public class TestCaseResult
@@ -26,4 +28,6 @@ public class TestCaseResult
     public int ActualStatus { get; set; }
     public string? ActualBody { get; set; }
     public string? FailReason { get; set; }
+    // Q2: base64-encoded PNG screenshot captured after the test case ran
+    public string? ScreenshotBase64 { get; set; }
 }

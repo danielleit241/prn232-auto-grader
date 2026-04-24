@@ -11,6 +11,7 @@
     <PackageReference Include="EPPlus" Version="7.*" />
     <PackageReference Include="HtmlAgilityPack" Version="1.*" />
     <PackageReference Include="MassTransit.RabbitMQ" Version="8.3.6" />
+    <PackageReference Include="Microsoft.Playwright" Version="1.52.*" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="5.*" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.*" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="8.*" />
