@@ -8,4 +8,5 @@ public class WorkerOptions
     public int ArtifactPortRangeStart { get; set; } = 7000;
     public int ArtifactPortRangeEnd { get; set; } = 7999;
     public string? NewmanExecutable { get; set; }
+    public string BindHost { get; set; } = "127.0.0.1";
 }

@@ -18,6 +18,7 @@ public class TestRunner(ILogger<TestRunner> logger, IOptions<WorkerOptions> work
         new(JsonSerializerDefaults.Web); // PropertyNameCaseInsensitive = true, no AOT issue
 
     private readonly NewmanLaunch? _newman = ResolveNewman(workerOpts.Value, logger);
+    private readonly string _bindHost = workerOpts.Value.BindHost;
 
     public async Task RunAsync(GradingJob job, StudentContext ctx, IUnitOfWork uow, CancellationToken ct)
     {
@@ -86,7 +87,7 @@ public class TestRunner(ILogger<TestRunner> logger, IOptions<WorkerOptions> work
     private async Task<List<TestCaseResult>> RunApiCasesAsync(
         List<TestCase> testCases, int port, HttpClient client, CancellationToken ct)
     {
-        var swaggerUrl = $"http://127.0.0.1:{port}/swagger/v1/swagger.json";
+        var swaggerUrl = $"http://{_bindHost}:{port}/swagger/v1/swagger.json";
         JsonDocument? swaggerDoc = null;
         string? fetchError = null;
 
@@ -131,7 +132,7 @@ public class TestRunner(ILogger<TestRunner> logger, IOptions<WorkerOptions> work
         // Run newman cases
         if (newmanCases.Count > 0)
         {
-            var newmanResults = await RunNewmanCasesAsync(newmanCases, port, ct);
+            var newmanResults = await RunNewmanCasesAsync(newmanCases, port, _bindHost, ct);
             results.AddRange(newmanResults);
         }
 
@@ -155,7 +156,7 @@ public class TestRunner(ILogger<TestRunner> logger, IOptions<WorkerOptions> work
     // ── Newman runner ──
 
     private async Task<List<TestCaseResult>> RunNewmanCasesAsync(
-        List<TestCase> testCases, int port, CancellationToken ct)
+        List<TestCase> testCases, int port, string bindHost, CancellationToken ct)
     {
         var collectionPath = Path.Combine(Path.GetTempPath(), $"newman-col-{Guid.NewGuid():N}.json");
         var reportPath     = Path.Combine(Path.GetTempPath(), $"newman-rep-{Guid.NewGuid():N}.json");
@@ -167,11 +168,11 @@ public class TestRunner(ILogger<TestRunner> logger, IOptions<WorkerOptions> work
                 const string hint =
                     "Newman CLI not found. Install: npm install -g newman, ensure Node is on PATH, or set Worker:NewmanExecutable to the full path of newman.cmd.";
                 return testCases.Select(tc =>
-                        FailResult(tc, $"http://localhost:{port}{tc.UrlTemplate}", hint))
+                        FailResult(tc, $"http://{bindHost}:{port}{tc.UrlTemplate}", hint))
                     .ToList();
             }
 
-            var collection = BuildPostmanCollection(testCases, port);
+            var collection = BuildPostmanCollection(testCases, port, bindHost);
             await File.WriteAllTextAsync(collectionPath, collection, ct);
 
             var tail =
@@ -182,15 +183,15 @@ public class TestRunner(ILogger<TestRunner> logger, IOptions<WorkerOptions> work
             logger.LogInformation("newman exit {Code}: {Stderr}", exitCode, stderr?.Length > 200 ? stderr[..200] : stderr);
 
             if (!File.Exists(reportPath))
-                return testCases.Select(tc => FailResult(tc, $"http://localhost:{port}{tc.UrlTemplate}", "newman did not produce report")).ToList();
+                return testCases.Select(tc => FailResult(tc, $"http://{bindHost}:{port}{tc.UrlTemplate}", "newman did not produce report")).ToList();
 
             var reportJson = await File.ReadAllTextAsync(reportPath, ct);
-            return ParseNewmanReport(testCases, reportJson, port);
+            return ParseNewmanReport(testCases, reportJson, port, bindHost);
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "newman failed");
-            return testCases.Select(tc => FailResult(tc, $"http://localhost:{port}{tc.UrlTemplate}", $"newman error: {ex.Message}")).ToList();
+            return testCases.Select(tc => FailResult(tc, $"http://{bindHost}:{port}{tc.UrlTemplate}", $"newman error: {ex.Message}")).ToList();
         }
         finally
         {
@@ -199,21 +200,22 @@ public class TestRunner(ILogger<TestRunner> logger, IOptions<WorkerOptions> work
         }
     }
 
-    private static string BuildPostmanCollection(List<TestCase> testCases, int port)
+    private static string BuildPostmanCollection(List<TestCase> testCases, int port, string bindHost)
     {
         var items = new JsonArray();
 
         foreach (var tc in testCases)
         {
             var expect = DeserializeExpect(tc.ExpectJson);
-            var url = $"http://127.0.0.1:{port}{tc.UrlTemplate}";
+            var url = $"http://{bindHost}:{port}{tc.UrlTemplate}";
 
             var requestObj = new JsonObject
             {
                 ["method"] = tc.HttpMethod.ToUpperInvariant(),
                 ["header"] = new JsonArray
                 {
-                    new JsonObject { ["key"] = "Content-Type", ["value"] = "application/json" }
+                    new JsonObject { ["key"] = "Content-Type", ["value"] = "application/json" },
+                    new JsonObject { ["key"] = "Accept",       ["value"] = "application/json" }
                 },
                 ["url"] = new JsonObject { ["raw"] = url }
             };
@@ -297,7 +299,7 @@ public class TestRunner(ILogger<TestRunner> logger, IOptions<WorkerOptions> work
         return collection.ToJsonString();
     }
 
-    private static List<TestCaseResult> ParseNewmanReport(List<TestCase> testCases, string reportJson, int port)
+    private static List<TestCaseResult> ParseNewmanReport(List<TestCase> testCases, string reportJson, int port, string bindHost)
     {
         var results = new List<TestCaseResult>(testCases.Count);
 
@@ -315,7 +317,7 @@ public class TestRunner(ILogger<TestRunner> logger, IOptions<WorkerOptions> work
             if (!found)
             {
                 return testCases.Select(tc =>
-                    FailResult(tc, $"http://localhost:{port}{tc.UrlTemplate}", "newman report missing executions")).ToList();
+                    FailResult(tc, $"http://{bindHost}:{port}{tc.UrlTemplate}", "newman report missing executions")).ToList();
             }
 
             var executionList = executions.EnumerateArray().ToList();
@@ -323,7 +325,7 @@ public class TestRunner(ILogger<TestRunner> logger, IOptions<WorkerOptions> work
             for (int i = 0; i < testCases.Count; i++)
             {
                 var tc = testCases[i];
-                var url = $"http://localhost:{port}{tc.UrlTemplate}";
+                var url = $"http://{bindHost}:{port}{tc.UrlTemplate}";
 
                 if (i >= executionList.Count)
                 {
@@ -378,7 +380,7 @@ public class TestRunner(ILogger<TestRunner> logger, IOptions<WorkerOptions> work
         catch (Exception ex)
         {
             return testCases.Select(tc =>
-                FailResult(tc, $"http://localhost:{port}{tc.UrlTemplate}", $"parse newman report error: {ex.Message}")).ToList();
+                FailResult(tc, $"http://{bindHost}:{port}{tc.UrlTemplate}", $"parse newman report error: {ex.Message}")).ToList();
         }
 
         return results;
@@ -470,10 +472,10 @@ public class TestRunner(ILogger<TestRunner> logger, IOptions<WorkerOptions> work
         return current;
     }
 
-    private static async Task<TestCaseResult> RunHttpTestCaseAsync(
+    private async Task<TestCaseResult> RunHttpTestCaseAsync(
         TestCase tc, int port, HttpClient client, CancellationToken ct)
     {
-        var url = $"http://127.0.0.1:{port}{tc.UrlTemplate}";
+        var url = $"http://{_bindHost}:{port}{tc.UrlTemplate}";
         var method = new HttpMethod(tc.HttpMethod.ToUpper());
         var request = new HttpRequestMessage(method, url);
 
@@ -603,7 +605,7 @@ public class TestRunner(ILogger<TestRunner> logger, IOptions<WorkerOptions> work
 
     // ── Q2: Playwright runner ──
 
-    private static async Task<List<TestCaseResult>> RunPlaywrightCasesAsync(
+    private async Task<List<TestCaseResult>> RunPlaywrightCasesAsync(
         List<TestCase> testCases, int port, CancellationToken ct)
     {
         using var playwright = await Playwright.CreateAsync();
@@ -620,13 +622,13 @@ public class TestRunner(ILogger<TestRunner> logger, IOptions<WorkerOptions> work
         return results;
     }
 
-    private static async Task<TestCaseResult> RunPlaywrightTestCaseAsync(
+    private async Task<TestCaseResult> RunPlaywrightTestCaseAsync(
         TestCase tc, int port,
         IBrowserContext browserContext, IAPIRequestContext apiContext,
         Dictionary<string, string> context, CancellationToken ct)
     {
         var urlPath = InterpolateVariables(tc.UrlTemplate, context);
-        var url = $"http://127.0.0.1:{port}{urlPath}";
+        var url = $"http://{_bindHost}:{port}{urlPath}";
         var inputJson = tc.InputJson != null ? InterpolateVariables(tc.InputJson, context) : null;
 
         var expect = DeserializeExpect(tc.ExpectJson);
@@ -640,8 +642,15 @@ public class TestRunner(ILogger<TestRunner> logger, IOptions<WorkerOptions> work
 
             if (method == "GET")
             {
+                var fullUrl = url;
+                if (inputJson != null)
+                {
+                    var qs = JsonToQueryString(inputJson);
+                    if (!string.IsNullOrEmpty(qs))
+                        fullUrl = url.Contains('?') ? url + "&" + qs : url + "?" + qs;
+                }
                 page = await browserContext.NewPageAsync();
-                var response = await page.GotoAsync(url,
+                var response = await page.GotoAsync(fullUrl,
                     new() { WaitUntil = WaitUntilState.DOMContentLoaded });
                 actualStatus = response?.Status ?? 0;
                 body = await page.ContentAsync();
