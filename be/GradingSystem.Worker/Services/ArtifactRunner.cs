@@ -40,6 +40,10 @@ public partial class ArtifactRunner(
             await SetupDatabaseAsync(dbName, assignment.DatabaseSqlPath, ct);
             logger.LogInformation("SQL Server sandbox ready: {DbName}", dbName);
         }
+        else if (hasApiQuestion)
+        {
+            logger.LogWarning("Assignment has API question but DatabaseSqlPath is null — student app will use its own connection string and may return 500");
+        }
 
         var ctx = new StudentContext
         {
@@ -100,7 +104,7 @@ public partial class ArtifactRunner(
 
             var dll = FindEntryDll(questionDir);
             var port = PickPort();
-            var env = BuildEnv(question, dbName, effectiveGivenApiBaseUrl);
+            var env = BuildEnv(question, dbName, effectiveGivenApiBaseUrl, questionDir);
 
             var process = StartDotnet(dll, port, env);
             await WaitForPortAsync($"http://127.0.0.1:{port}", process, ct);
@@ -196,7 +200,8 @@ public partial class ArtifactRunner(
         await cmd.ExecuteNonQueryAsync();
     }
 
-    private Dictionary<string, string> BuildEnv(Question question, string? dbName, string? givenApiBaseUrl)
+    private Dictionary<string, string> BuildEnv(
+        Question question, string? dbName, string? givenApiBaseUrl, string? questionDir = null)
     {
         var env = new Dictionary<string, string>();
 
@@ -204,13 +209,48 @@ public partial class ArtifactRunner(
         {
             var masterConn = config.GetConnectionString("SqlServer")!;
             var builder = new SqlConnectionStringBuilder(masterConn) { InitialCatalog = dbName };
-            env["ConnectionStrings__DefaultConnection"] = builder.ConnectionString;
+            var connStr = builder.ConnectionString;
+
+            // Always set DefaultConnection as the baseline
+            env["ConnectionStrings__DefaultConnection"] = connStr;
+
+            // Also override every connection string key found in the student's appsettings
+            // so that students using non-standard names (SchoolDB, AppDb, etc.) also work
+            if (questionDir != null)
+            {
+                foreach (var key in FindStudentConnectionStringKeys(questionDir))
+                {
+                    var envKey = $"ConnectionStrings__{key}";
+                    if (!env.ContainsKey(envKey))
+                    {
+                        env[envKey] = connStr;
+                        logger.LogInformation("Injecting sandbox DB into connection string '{Key}'", key);
+                    }
+                }
+            }
         }
 
         if (question.Type == QuestionType.Razor && givenApiBaseUrl != null)
             env["GivenAPIBaseUrl"] = givenApiBaseUrl;
 
         return env;
+    }
+
+    private static IEnumerable<string> FindStudentConnectionStringKeys(string dir)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var path in Directory.GetFiles(dir, "appsettings*.json", SearchOption.AllDirectories))
+        {
+            if (path.Contains("Development", StringComparison.OrdinalIgnoreCase)) continue;
+            try
+            {
+                var root = JsonNode.Parse(File.ReadAllText(path))?.AsObject();
+                if (root?["ConnectionStrings"] is not JsonObject csObj) continue;
+                foreach (var kv in csObj)
+                    if (seen.Add(kv.Key)) yield return kv.Key;
+            }
+            catch { /* unreadable — skip */ }
+        }
     }
 
     private static string FindEntryDll(string dir)
