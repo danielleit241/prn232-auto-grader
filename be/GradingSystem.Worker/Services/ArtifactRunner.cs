@@ -65,11 +65,12 @@ public partial class ArtifactRunner(
             var givenDll = FindEntryDll(givenRoot);
             var givenPort = PickPort();
             var givenProcess = StartDotnet(givenDll, givenPort);
-            await WaitForPortAsync($"http://127.0.0.1:{givenPort}", givenProcess, ct);
+            var bindHost = opts.Value.BindHost;
+            await WaitForPortAsync($"http://{bindHost}:{givenPort}", givenProcess, ct);
 
             ctx.GivenApiProcess = givenProcess;
             ctx.GivenApiPort = givenPort;
-            effectiveGivenApiBaseUrl = $"http://127.0.0.1:{givenPort}";
+            effectiveGivenApiBaseUrl = $"http://{bindHost}:{givenPort}";
             logger.LogInformation("Given API started on port {Port} for job {JobId}", givenPort, job.Id);
         }
 
@@ -107,7 +108,7 @@ public partial class ArtifactRunner(
             var env = BuildEnv(question, dbName, effectiveGivenApiBaseUrl, questionDir);
 
             var process = StartDotnet(dll, port, env);
-            await WaitForPortAsync($"http://127.0.0.1:{port}", process, ct);
+            await WaitForPortAsync($"http://{opts.Value.BindHost}:{port}", process, ct);
 
             ctx.QuestionApps[question.Id] = new QuestionApp { Process = process, Port = port };
 
@@ -303,7 +304,7 @@ public partial class ArtifactRunner(
     private Process StartDotnet(string dll, int port, Dictionary<string, string>? env = null)
     {
         // --urls wins over appsettings / hardcoded UseUrls (e.g. http://127.0.0.1:5100 in publish)
-        var bindUrl = $"http://127.0.0.1:{port}";
+        var bindUrl = $"http://{opts.Value.BindHost}:{port}";
         var psi = new ProcessStartInfo("dotnet", $"\"{dll}\" --urls={bindUrl}")
         {
             WorkingDirectory = Path.GetDirectoryName(dll),
