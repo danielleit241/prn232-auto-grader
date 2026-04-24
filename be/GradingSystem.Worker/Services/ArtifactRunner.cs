@@ -236,9 +236,10 @@ public partial class ArtifactRunner(
         return env;
     }
 
-    private static IEnumerable<string> FindStudentConnectionStringKeys(string dir)
+    private static List<string> FindStudentConnectionStringKeys(string dir)
     {
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var result = new List<string>();
         foreach (var path in Directory.GetFiles(dir, "appsettings*.json", SearchOption.AllDirectories))
         {
             if (path.Contains("Development", StringComparison.OrdinalIgnoreCase)) continue;
@@ -247,10 +248,11 @@ public partial class ArtifactRunner(
                 var root = JsonNode.Parse(File.ReadAllText(path))?.AsObject();
                 if (root?["ConnectionStrings"] is not JsonObject csObj) continue;
                 foreach (var kv in csObj)
-                    if (seen.Add(kv.Key)) yield return kv.Key;
+                    if (seen.Add(kv.Key)) result.Add(kv.Key);
             }
             catch { /* unreadable — skip */ }
         }
+        return result;
     }
 
     private static string FindEntryDll(string dir)
