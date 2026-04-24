@@ -470,7 +470,8 @@ export default function QuestionDetailPage() {
               spellCheck={false}
               style={{
                 width: "100%",
-                minHeight: "280px",
+                minHeight: "500px",
+                maxHeight: "70vh",
                 backgroundColor: "#1e1e1e",
                 color: "#d4d4d4",
                 border: jsonError ? "2px solid #dc2626" : "1px solid #c5c0b1",
