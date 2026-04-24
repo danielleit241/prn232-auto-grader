@@ -7,6 +7,7 @@ using GradingSystem.Application.Interfaces;
 using GradingSystem.Domain.Entities;
 using GradingSystem.Worker.Options;
 using HtmlAgilityPack;
+using Microsoft.Playwright;
 using Microsoft.Extensions.Options;
 
 namespace GradingSystem.Worker.Services;
@@ -39,7 +40,7 @@ public class TestRunner(ILogger<TestRunner> logger, IOptions<WorkerOptions> work
             }
 
             var testCases = (await uow.TestCases.FindAsync(tc => tc.QuestionId == question.Id))
-                            .OrderBy(tc => tc.CreatedAt).ToList();
+                            .OrderBy(tc => tc.Order).ThenBy(tc => tc.CreatedAt).ToList();
 
             List<TestCaseResult> details;
 
@@ -60,7 +61,7 @@ public class TestRunner(ILogger<TestRunner> logger, IOptions<WorkerOptions> work
             else if (question.Type == QuestionType.Api)
                 details = await RunApiCasesAsync(testCases, app.Port, client, ct);
             else
-                details = await RunHttpCasesAsync(testCases, app.Port, client, ct);
+                details = await RunPlaywrightCasesAsync(testCases, app.Port, ct);
 
             int totalScore = details.Sum(r => r.AwardedScore);
 
@@ -469,17 +470,6 @@ public class TestRunner(ILogger<TestRunner> logger, IOptions<WorkerOptions> work
         return current;
     }
 
-    // ── Q2: Razor Pages — HTTP cases with id-based HTML checks ──
-
-    private static async Task<List<TestCaseResult>> RunHttpCasesAsync(
-        List<TestCase> testCases, int port, HttpClient client, CancellationToken ct)
-    {
-        var results = new List<TestCaseResult>(testCases.Count);
-        foreach (var tc in testCases)
-            results.Add(await RunHttpTestCaseAsync(tc, port, client, ct));
-        return results;
-    }
-
     private static async Task<TestCaseResult> RunHttpTestCaseAsync(
         TestCase tc, int port, HttpClient client, CancellationToken ct)
     {
@@ -609,6 +599,220 @@ public class TestRunner(ILogger<TestRunner> logger, IOptions<WorkerOptions> work
         }
 
         return null;
+    }
+
+    // ── Q2: Playwright runner ──
+
+    private static async Task<List<TestCaseResult>> RunPlaywrightCasesAsync(
+        List<TestCase> testCases, int port, CancellationToken ct)
+    {
+        using var playwright = await Playwright.CreateAsync();
+        await using var browser = await playwright.Chromium.LaunchAsync(new() { Headless = true });
+        await using var browserContext = await browser.NewContextAsync();
+        var apiContext = browserContext.APIRequest;
+
+        var context = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var results = new List<TestCaseResult>(testCases.Count);
+
+        foreach (var tc in testCases)
+            results.Add(await RunPlaywrightTestCaseAsync(tc, port, browserContext, apiContext, context, ct));
+
+        return results;
+    }
+
+    private static async Task<TestCaseResult> RunPlaywrightTestCaseAsync(
+        TestCase tc, int port,
+        IBrowserContext browserContext, IAPIRequestContext apiContext,
+        Dictionary<string, string> context, CancellationToken ct)
+    {
+        var urlPath = InterpolateVariables(tc.UrlTemplate, context);
+        var url = $"http://127.0.0.1:{port}{urlPath}";
+        var inputJson = tc.InputJson != null ? InterpolateVariables(tc.InputJson, context) : null;
+
+        var expect = DeserializeExpect(tc.ExpectJson);
+        int actualStatus = 0;
+        string body = string.Empty;
+        IPage? page = null;
+
+        try
+        {
+            var method = tc.HttpMethod.ToUpperInvariant();
+
+            if (method == "GET")
+            {
+                page = await browserContext.NewPageAsync();
+                var response = await page.GotoAsync(url,
+                    new() { WaitUntil = WaitUntilState.DOMContentLoaded });
+                actualStatus = response?.Status ?? 0;
+                body = await page.ContentAsync();
+            }
+            else
+            {
+                var options = new APIRequestContextOptions
+                {
+                    Headers = new Dictionary<string, string>
+                        { ["Content-Type"] = "application/json" },
+                    DataString = inputJson ?? "{}",
+                };
+                IAPIResponse response = method switch
+                {
+                    "POST"   => await apiContext.PostAsync(url, options),
+                    "PUT"    => await apiContext.PutAsync(url, options),
+                    "PATCH"  => await apiContext.PatchAsync(url, options),
+                    "DELETE" => await apiContext.DeleteAsync(url, options),
+                    _        => await apiContext.GetAsync(url, options),
+                };
+                actualStatus = response.Status;
+                body = await response.TextAsync();
+
+                var contentType = response.Headers.GetValueOrDefault("content-type", "");
+                if (contentType.Contains("text/html"))
+                {
+                    page = await browserContext.NewPageAsync();
+                    await page.SetContentAsync(body);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            return FailResult(tc, url, $"Playwright exception: {ex.Message}");
+        }
+
+        string? failReason = null;
+
+        if (expect.Status != null && actualStatus != expect.Status)
+            failReason = $"Expected status {expect.Status}, got {actualStatus}";
+
+        if (failReason == null && page != null)
+            failReason = await EvaluatePlaywrightAsync(expect, page);
+
+        if (failReason == null && page == null && !string.IsNullOrEmpty(body))
+            failReason = EvaluateJsonBody(expect, body);
+
+        if (!string.IsNullOrEmpty(body))
+            ExtractVariables(body, expect.Extract, context);
+
+        string? screenshotBase64 = null;
+        if (page != null)
+        {
+            try
+            {
+                var png = await page.ScreenshotAsync(new() { FullPage = true });
+                screenshotBase64 = Convert.ToBase64String(png);
+            }
+            catch { /* screenshot is best-effort */ }
+
+            await page.CloseAsync();
+        }
+
+        bool pass = failReason == null;
+        return new TestCaseResult
+        {
+            TestCaseId      = tc.Id,
+            Pass            = pass,
+            AwardedScore    = pass ? tc.Score : 0,
+            HttpMethod      = tc.HttpMethod,
+            Url             = url,
+            ActualStatus    = actualStatus,
+            ActualBody      = body.Length > 500 ? body[..500] : body,
+            FailReason      = failReason,
+            ScreenshotBase64 = screenshotBase64,
+        };
+    }
+
+    private static async Task<string?> EvaluatePlaywrightAsync(ExpectJson expect, IPage page)
+    {
+        if (expect.Value != null)
+        {
+            var content = await page.ContentAsync();
+            if (!content.Contains(expect.Value, StringComparison.OrdinalIgnoreCase))
+                return $"Value '{expect.Value}' not found in response";
+        }
+
+        if (expect.ElementId != null)
+        {
+            var loc = page.Locator($"#{expect.ElementId}");
+            if (await loc.CountAsync() == 0)
+                return $"Element with id='{expect.ElementId}' not found";
+            if (expect.ElementText != null)
+            {
+                var text = await loc.InnerTextAsync();
+                if (!text.Contains(expect.ElementText, StringComparison.OrdinalIgnoreCase))
+                    return $"Element id='{expect.ElementId}' does not contain '{expect.ElementText}'";
+            }
+        }
+
+        if (expect.Selector != null)
+        {
+            var loc = page.Locator(expect.Selector);
+            var count = await loc.CountAsync();
+            if (expect.SelectorMinCount != null)
+            {
+                if (count < expect.SelectorMinCount)
+                    return $"Selector '{expect.Selector}' matched {count}, expected >= {expect.SelectorMinCount}";
+            }
+            else if (count == 0)
+                return $"Selector '{expect.Selector}' not found";
+
+            if (expect.SelectorText != null)
+            {
+                var text = await loc.First.InnerTextAsync();
+                if (!text.Contains(expect.SelectorText, StringComparison.OrdinalIgnoreCase))
+                    return $"SelectorText '{expect.SelectorText}' not found in element";
+            }
+        }
+
+        return null;
+    }
+
+    private static string? EvaluateJsonBody(ExpectJson expect, string body)
+    {
+        JsonElement root;
+        try { root = JsonDocument.Parse(body).RootElement; }
+        catch { return "Response is not valid JSON"; }
+
+        if (expect.IsArray != null)
+        {
+            bool actualIsArray = root.ValueKind == JsonValueKind.Array;
+            if (actualIsArray != expect.IsArray)
+                return $"Expected isArray={expect.IsArray}, got {(actualIsArray ? "array" : "object")}";
+        }
+
+        if (expect.Fields != null)
+        {
+            var target = root.ValueKind == JsonValueKind.Array ? root[0] : root;
+            var missing = expect.Fields.Where(f => !target.TryGetProperty(f, out _)).ToList();
+            if (missing.Count > 0)
+                return $"Missing fields: {string.Join(", ", missing)}";
+        }
+
+        return null;
+    }
+
+    private static string InterpolateVariables(string template, Dictionary<string, string> ctx)
+    {
+        foreach (var (key, value) in ctx)
+            template = template.Replace($"{{{{{key}}}}}", value);
+        return template;
+    }
+
+    private static void ExtractVariables(string body, Dictionary<string, string>? extract,
+        Dictionary<string, string> ctx)
+    {
+        if (extract == null || string.IsNullOrWhiteSpace(body)) return;
+        try
+        {
+            var doc = JsonDocument.Parse(body).RootElement;
+            foreach (var (varName, path) in extract)
+            {
+                var node = doc;
+                foreach (var part in path.TrimStart('$', '.').Split('.'))
+                    if (!node.TryGetProperty(part, out node)) goto next;
+                ctx[varName] = node.ToString();
+                next:;
+            }
+        }
+        catch { }
     }
 
     // ── Helpers ──

@@ -30,4 +30,7 @@ public class CreateTestCaseRequest
     // Q2 id-based: HTML element id to check
     public string? ElementId { get; set; }
     public string? ElementText { get; set; }
+    // Q2 sequential flows: execution order and variable extraction
+    public int Order { get; set; }
+    public Dictionary<string, string>? Extract { get; set; }
 }

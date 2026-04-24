@@ -11,4 +11,5 @@ public class TestCase : BaseEntity
     public string? InputJson { get; set; }                   // request body / query params
     public string ExpectJson { get; set; } = string.Empty;   // {"status":200,"isArray":true,...}
     public int Score { get; set; }
+    public int Order { get; set; }
 }

@@ -56,16 +56,20 @@ export interface TestCase {
   name: string;
   httpMethod: string;
   urlTemplate: string;
-  inputJson?: string;
-  expectJson?: string;
+  input?: unknown;
   expectedStatus?: number;
   isArray?: boolean;
   fields?: string[];
+  value?: string;
   score: number;
+  expectedBody?: unknown;
   elementId?: string;
   elementText?: string;
   selector?: string;
+  selectorText?: string;
   selectorMinCount?: number;
+  order: number;
+  extract?: Record<string, string>;
   createdAt: string;
 }
 
@@ -135,6 +139,7 @@ export interface TestCaseResult {
   actualStatus?: number;
   actualBody?: string;
   failReason?: string;
+  screenshotBase64?: string;
 }
 
 export interface SubmissionQuestionResult {
@@ -214,17 +219,23 @@ export interface CreateQuestionRequest {
 }
 
 export interface CreateTestCaseRequest {
-  name: string;
+  name?: string;
   httpMethod: string;
   urlTemplate: string;
-  inputJson?: string;
-  expectJson?: string;
+  input?: unknown;
   expectedStatus?: number;
+  isArray?: boolean;
+  fields?: string[];
+  value?: string;
   score: number;
+  expectedBody?: unknown;
   elementId?: string;
   elementText?: string;
   selector?: string;
+  selectorText?: string;
   selectorMinCount?: number;
+  order?: number;
+  extract?: Record<string, string>;
 }
 
 export interface AdjustQuestionResultRequest {

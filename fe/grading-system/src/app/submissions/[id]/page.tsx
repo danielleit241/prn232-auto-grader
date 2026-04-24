@@ -536,11 +536,54 @@ export default function SubmissionDetailPage() {
                               </span>
                             </div>
 
+                            {/* Actual status / body on failure */}
+                            {!tc.pass && (tc.actualStatus !== undefined || tc.actualBody) && (
+                              <div
+                                style={{
+                                  marginLeft: "30px",
+                                  marginTop: "6px",
+                                  display: "flex",
+                                  gap: "8px",
+                                  flexWrap: "wrap",
+                                  fontFamily: "Inter, Arial, sans-serif",
+                                  fontSize: "0.75rem",
+                                  color: "#939084",
+                                }}
+                              >
+                                {tc.actualStatus !== undefined && (
+                                  <span>
+                                    HTTP <strong style={{ color: "#36342e" }}>{tc.actualStatus}</strong>
+                                  </span>
+                                )}
+                                {tc.actualBody && (
+                                  <code
+                                    style={{
+                                      fontFamily: "'Cascadia Code', 'Consolas', monospace",
+                                      fontSize: "0.75rem",
+                                      color: "#36342e",
+                                      backgroundColor: "#f5f4f0",
+                                      padding: "1px 6px",
+                                      borderRadius: "3px",
+                                      maxWidth: "600px",
+                                      overflow: "hidden",
+                                      textOverflow: "ellipsis",
+                                      whiteSpace: "nowrap",
+                                      display: "inline-block",
+                                    }}
+                                    title={tc.actualBody}
+                                  >
+                                    {tc.actualBody}
+                                  </code>
+                                )}
+                              </div>
+                            )}
+
                             {/* Fail reason */}
                             {tc.failReason && (
                               <div
                                 style={{
                                   marginLeft: "30px",
+                                  marginTop: "6px",
                                   padding: "8px 12px",
                                   backgroundColor: "#fef2f2",
                                   border: "1px solid #fecaca",
@@ -555,6 +598,34 @@ export default function SubmissionDetailPage() {
                               >
                                 {tc.failReason}
                               </div>
+                            )}
+
+                            {/* Q2 screenshot */}
+                            {tc.screenshotBase64 && (
+                              <details style={{ marginLeft: "30px", marginTop: "8px" }}>
+                                <summary
+                                  style={{
+                                    fontFamily: "Inter, Arial, sans-serif",
+                                    fontSize: "0.75rem",
+                                    fontWeight: 600,
+                                    color: "#939084",
+                                    cursor: "pointer",
+                                    userSelect: "none",
+                                  }}
+                                >
+                                  View screenshot
+                                </summary>
+                                <img
+                                  src={`data:image/png;base64,${tc.screenshotBase64}`}
+                                  alt="Test case screenshot"
+                                  style={{
+                                    marginTop: "8px",
+                                    maxWidth: "100%",
+                                    border: "1px solid #c5c0b1",
+                                    borderRadius: "4px",
+                                  }}
+                                />
+                              </details>
                             )}
                           </div>
                         ))}

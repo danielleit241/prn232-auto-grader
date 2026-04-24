@@ -21,4 +21,6 @@ public class TestCaseDto
     public JsonElement? ExpectedBody { get; set; }
     public string? ElementId { get; set; }
     public string? ElementText { get; set; }
+    public int Order { get; set; }
+    public Dictionary<string, string>? Extract { get; set; }
 }

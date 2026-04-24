@@ -41,14 +41,15 @@ export default function QuestionDetailPage() {
   "httpMethod": "GET",
   "urlTemplate": "/api/students",
   "expectedStatus": 200,
-  "expectedBody": [ ... ],
+  "isArray": true,
+  "fields": ["id", "name"],
   "score": 1
 }
 
 // Or array of test cases:
 [
-  { "httpMethod": "GET", "urlTemplate": "/api/students", "expectedStatus": 200, "score": 1 },
-  { "httpMethod": "POST", "urlTemplate": "/api/students", "expectedStatus": 201, "requestBody": { ... }, "score": 1 }
+  { "httpMethod": "GET", "urlTemplate": "/api/students", "expectedStatus": 200, "isArray": true, "score": 1 },
+  { "httpMethod": "POST", "urlTemplate": "/api/students", "expectedStatus": 201, "input": { "name": "John" }, "expectedBody": { "id": 1, "name": "John" }, "score": 1 }
 ]`;
 
   const jsonPlaceholderRazor = `// Single test case (Razor):
@@ -57,14 +58,16 @@ export default function QuestionDetailPage() {
   "urlTemplate": "/Instructor",
   "expectedStatus": 200,
   "elementId": "ip_instructorName",
+  "order": 1,
   "score": 1
 }
 
-// Or array of test cases:
+// Or array of test cases (sequential flow):
 [
-  { "httpMethod": "GET", "urlTemplate": "/Instructor", "expectedStatus": 200, "elementId": "ip_instructorName", "score": 1 },
-  { "httpMethod": "GET", "urlTemplate": "/Instructor", "expectedStatus": 200, "selector": "table tbody tr", "selectorMinCount": 5, "score": 1 },
-  { "httpMethod": "GET", "urlTemplate": "/Instructor/1", "expectedStatus": 200, "elementId": "span_1", "elementText": "1", "score": 1 }
+  { "httpMethod": "POST", "urlTemplate": "/Login", "expectedStatus": 200, "input": { "username": "admin" }, "extract": { "token": "$.token" }, "order": 1, "score": 1 },
+  { "httpMethod": "GET", "urlTemplate": "/Instructor", "expectedStatus": 200, "elementId": "ip_instructorName", "order": 2, "score": 1 },
+  { "httpMethod": "GET", "urlTemplate": "/Instructor", "expectedStatus": 200, "selector": "table tbody tr", "selectorMinCount": 5, "order": 3, "score": 1 },
+  { "httpMethod": "GET", "urlTemplate": "/Instructor/1", "expectedStatus": 200, "elementId": "span_1", "elementText": "1", "order": 4, "score": 1 }
 ]`;
 
   const jsonPlaceholder = isRazor ? jsonPlaceholderRazor : jsonPlaceholderApi;
@@ -108,21 +111,23 @@ export default function QuestionDetailPage() {
     const method = obj.httpMethod || obj.method || "GET";
     const url = obj.urlTemplate || obj.url || "";
     return {
-      name: obj.name || `${method} ${url}`,
+      name: obj.name,
       httpMethod: method,
       urlTemplate: url,
       expectedStatus: obj.expectedStatus ?? obj.status ?? 200,
-      expectJson: obj.expectedBody !== undefined
-        ? JSON.stringify(obj.expectedBody)
-        : obj.expectJson ?? undefined,
-      inputJson: obj.requestBody !== undefined
-        ? JSON.stringify(obj.requestBody)
-        : obj.inputJson ?? undefined,
+      input: obj.input ?? obj.requestBody ?? obj.body ?? undefined,
+      expectedBody: obj.expectedBody ?? undefined,
+      isArray: obj.isArray,
+      fields: obj.fields,
+      value: obj.value,
       score: obj.score ?? 1,
       elementId: obj.elementId,
       elementText: obj.elementText,
       selector: obj.selector,
+      selectorText: obj.selectorText,
       selectorMinCount: obj.selectorMinCount,
+      order: obj.order ?? 0,
+      extract: obj.extract,
     };
   };
 
@@ -535,24 +540,30 @@ export default function QuestionDetailPage() {
                 color: "#36342e",
               }}
             >
-              <div><strong>httpMethod</strong> — GET, POST, PUT, DELETE <em>(default: GET)</em></div>
+              <div><strong>httpMethod</strong> — GET, POST, PUT, PATCH, DELETE <em>(required)</em></div>
               <div><strong>urlTemplate</strong> — e.g. {isRazor ? "/Instructor" : "/api/students"} <em>(required)</em></div>
               <div><strong>expectedStatus</strong> — HTTP status code <em>(default: 200)</em></div>
+              <div><strong>input</strong> — request body / query params (object)</div>
+              <div><strong>score</strong> — points for this test case <em>(required)</em></div>
+              <div><strong>order</strong> — execution sequence for sequential flows <em>(default: 0)</em></div>
               {isRazor ? (
                 <>
                   <div><strong>elementId</strong> — HTML element ID to check for existence</div>
                   <div><strong>elementText</strong> — expected text content of the element</div>
-                  <div><strong>selector</strong> — CSS selector (e.g. &quot;table tbody tr&quot;)</div>
+                  <div><strong>selector</strong> — CSS/XPath selector (e.g. &quot;table tbody tr&quot;)</div>
+                  <div><strong>selectorText</strong> — text to find within selector match</div>
                   <div><strong>selectorMinCount</strong> — minimum number of matching elements</div>
+                  <div><strong>extract</strong> — JSONPath map to extract from response into variables (e.g. {`{"token":"$.token"}`})</div>
                 </>
               ) : (
                 <>
-                  <div><strong>expectedBody</strong> — expected response body (object or array)</div>
-                  <div><strong>requestBody</strong> — request body for POST/PUT</div>
+                  <div><strong>expectedBody</strong> — exact expected response body (newman comparison)</div>
+                  <div><strong>isArray</strong> — assert response is a JSON array</div>
+                  <div><strong>fields</strong> — required fields in response object/array items</div>
+                  <div><strong>value</strong> — string to find anywhere in response</div>
                 </>
               )}
-              <div><strong>score</strong> — points for this test case <em>(default: 1)</em></div>
-              <div><strong>name</strong> — display name <em>(auto: METHOD /url)</em></div>
+              <div><strong>name</strong> — display name <em>(auto-generated if omitted)</em></div>
             </div>
           </details>
 
@@ -711,7 +722,10 @@ export default function QuestionDetailPage() {
                       color: "#939084",
                     }}
                   >
-                    Status: {tc.expectedStatus} &middot;{" "}
+                    Status: {tc.expectedStatus ?? "—"} &middot;{" "}
+                    {tc.order > 0 && (
+                      <>Order: <strong>{tc.order}</strong> &middot;{" "}</>
+                    )}
                     <strong style={{ color: "#ff4f00" }}>{tc.score} pts</strong>
                   </span>
                 </div>

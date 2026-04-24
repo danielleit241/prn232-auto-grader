@@ -58,6 +58,7 @@ public class TestCaseService(IUnitOfWork unitOfWork) : ITestCaseService
                 InputJson   = SerializeInput(req.Input),
                 ExpectJson  = SerializeExpect(req),
                 Score       = req.Score,
+                Order       = req.Order,
             };
 
             await unitOfWork.TestCases.AddAsync(entity);
@@ -72,7 +73,7 @@ public class TestCaseService(IUnitOfWork unitOfWork) : ITestCaseService
     public async Task<IEnumerable<TestCaseDto>> GetByQuestionIdAsync(Guid questionId, CancellationToken ct = default)
     {
         var entities = await unitOfWork.TestCases.FindAsync(t => t.QuestionId == questionId);
-        return entities.OrderBy(t => t.CreatedAt).Select(Map);
+        return entities.OrderBy(t => t.Order).ThenBy(t => t.CreatedAt).Select(Map);
     }
 
     public async Task<int> DeleteByQuestionIdAsync(Guid questionId, CancellationToken ct = default)
@@ -115,6 +116,7 @@ public class TestCaseService(IUnitOfWork unitOfWork) : ITestCaseService
         entity.InputJson   = SerializeInput(request.Input);
         entity.ExpectJson  = SerializeExpect(request);
         entity.Score       = request.Score;
+        entity.Order       = request.Order;
 
         unitOfWork.TestCases.Update(entity);
         await unitOfWork.SaveChangesAsync(ct);
@@ -146,6 +148,7 @@ public class TestCaseService(IUnitOfWork unitOfWork) : ITestCaseService
             body             = req.ExpectedBody,
             elementId        = req.ElementId,
             elementText      = req.ElementText,
+            extract          = req.Extract,
         }, SerializerOpts);
 
     private static TestCaseDto Map(TestCase entity)
@@ -158,6 +161,7 @@ public class TestCaseService(IUnitOfWork unitOfWork) : ITestCaseService
             HttpMethod  = entity.HttpMethod,
             UrlTemplate = entity.UrlTemplate,
             Score       = entity.Score,
+            Order       = entity.Order,
         };
 
         if (entity.InputJson != null)
@@ -202,6 +206,9 @@ public class TestCaseService(IUnitOfWork unitOfWork) : ITestCaseService
 
             if (root.TryGetProperty("elementText", out var etxt) && etxt.ValueKind != JsonValueKind.Null)
                 dto.ElementText = etxt.GetString();
+
+            if (root.TryGetProperty("extract", out var ext) && ext.ValueKind == JsonValueKind.Object)
+                dto.Extract = ext.Deserialize<Dictionary<string, string>>(SerializerOpts);
         }
         catch { /* ignore malformed stored JSON */ }
 

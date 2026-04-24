@@ -16,7 +16,7 @@ COPY GradingSystem.Infrastructure/   GradingSystem.Infrastructure/
 COPY GradingSystem.Worker/           GradingSystem.Worker/
 RUN dotnet publish GradingSystem.Worker/GradingSystem.Worker.csproj -c Release -o /app/publish
 
-FROM base AS final
+FROM mcr.microsoft.com/playwright/dotnet:v1.52.0-noble AS final
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
