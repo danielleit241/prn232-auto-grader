@@ -22,6 +22,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Detect changed paths
+        id: changes
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            api:
+              - 'be/**'
+            worker:
+              - 'be/**'
+            fe:
+              - 'fe/grading-system/**'
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -32,6 +44,7 @@ jobs:
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Build and push API image
+        if: steps.changes.outputs.api == 'true'
         uses: docker/build-push-action@v6
         with:
           context: ./be
@@ -44,11 +57,15 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build and push Frontend image
+        if: steps.changes.outputs.fe == 'true'
         uses: docker/build-push-action@v6
         with:
           context: ./fe/grading-system
           file: ./fe/grading-system/Dockerfile
           push: true
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL != '' && vars.NEXT_PUBLIC_API_URL || 'https://prn232.verendar.vn/api/v1' }}
+            NEXT_PUBLIC_APP_URL=${{ vars.NEXT_PUBLIC_APP_URL != '' && vars.NEXT_PUBLIC_APP_URL || 'https://prn232.verendar.vn' }}
           tags: |
             ${{ secrets.DOCKER_USERNAME }}/grading-system-fe:latest
             ${{ secrets.DOCKER_USERNAME }}/grading-system-fe:${{ github.sha }}
@@ -56,6 +73,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build and push Worker image
+        if: steps.changes.outputs.worker == 'true'
         uses: docker/build-push-action@v6
         with:
           context: ./be
@@ -70,5 +88,5 @@ jobs:
       - name: Trigger Dokploy Deployment
         env:
           DOKPLOY_WEBHOOK_URL: ${{ secrets.DOKPLOY_WEBHOOK_URL }}
-        if: env.DOKPLOY_WEBHOOK_URL != ''
+        if: env.DOKPLOY_WEBHOOK_URL != '' && (steps.changes.outputs.api == 'true' || steps.changes.outputs.worker == 'true' || steps.changes.outputs.fe == 'true')
         run: curl -X GET "$DOKPLOY_WEBHOOK_URL"
