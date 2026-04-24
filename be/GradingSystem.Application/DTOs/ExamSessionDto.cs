@@ -49,7 +49,7 @@ public class SessionSubmissionResultDto
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public SubmissionStatus Status { get; set; }
     public bool HasArtifact { get; set; }
-    public int TotalScore { get; set; }
+    public decimal TotalScore { get; set; }
     public int MaxScore { get; set; }
     public List<QuestionSummaryResult> Questions { get; set; } = [];
     public string? Notes { get; set; }
@@ -59,10 +59,10 @@ public class QuestionSummaryResult
 {
     public Guid QuestionId { get; set; }
     public string QuestionTitle { get; set; } = string.Empty;
-    public int Score { get; set; }
-    public int FinalScore { get; set; }
+    public decimal Score { get; set; }
+    public decimal FinalScore { get; set; }
     public int MaxScore { get; set; }
-    public int? AdjustedScore { get; set; }
+    public decimal? AdjustedScore { get; set; }
     public string? AdjustReason { get; set; }
     public List<TestCaseResult>? TestCaseResults { get; set; }
 }

@@ -64,7 +64,7 @@ public class TestRunner(ILogger<TestRunner> logger, IOptions<WorkerOptions> work
             else
                 details = await RunPlaywrightCasesAsync(testCases, app.Port, ct);
 
-            int totalScore = details.Sum(r => r.AwardedScore);
+            decimal totalScore = details.Sum(r => r.AwardedScore);
 
             await uow.QuestionResults.AddAsync(new QuestionResult
             {

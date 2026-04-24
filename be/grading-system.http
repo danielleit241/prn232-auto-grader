@@ -129,28 +129,6 @@ Content-Type: application/json
     "score": 1
   },
   {
-    "name": "GET /api/student-performance – pagination fields",
-    "httpMethod": "GET",
-    "urlTemplate": "/api/student-performance",
-    "expectedStatus": 200,
-    "input": { "page": 1, "pageSize": 5 },
-    "expectedBody": {
-      "data": [
-        { "studentId": 1, "studentName": "Nguyen Hoang Long", "email": "longnh@student.edu.vn", "gpa": 8.25 },
-        { "studentId": 2, "studentName": "Vu Minh Anh",       "email": "anhvm@student.edu.vn",  "gpa": 7.0  },
-        { "studentId": 3, "studentName": "Le Bao Chau",       "email": "chaulb@student.edu.vn", "gpa": 9.0  },
-        { "studentId": 4, "studentName": "Dang Tien Dat",     "email": "datdt@student.edu.vn",  "gpa": 7.5  },
-        { "studentId": 5, "studentName": "Tran Thu Ha",       "email": "hatt@student.edu.vn",   "gpa": 8.0  }
-      ],
-      "totalStudents": 5,
-      "totalPages": 1,
-      "currentPage": 1,
-      "pageSize": 5
-    },
-    "order": 2,
-    "score": 1
-  },
-  {
     "name": "GET /api/student-performance – filter minGpa=8",
     "httpMethod": "GET",
     "urlTemplate": "/api/student-performance",

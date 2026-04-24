@@ -23,8 +23,8 @@ public class CreateTestCaseRequest
     public string? SelectorText { get; set; }
     [Range(1, 1000)]
     public int? SelectorMinCount { get; set; }
-    [Range(1, int.MaxValue)]
-    public int Score { get; set; }
+    [Range(0.01, double.MaxValue)]
+    public decimal Score { get; set; }
     // Q1 newman: expected response body JSON
     public JsonElement? ExpectedBody { get; set; }
     // Q2 id-based: HTML element id to check

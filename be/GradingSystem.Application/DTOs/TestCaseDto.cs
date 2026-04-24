@@ -17,7 +17,7 @@ public class TestCaseDto
     public string? Selector { get; set; }
     public string? SelectorText { get; set; }
     public int? SelectorMinCount { get; set; }
-    public int Score { get; set; }
+    public decimal Score { get; set; }
     public JsonElement? ExpectedBody { get; set; }
     public string? ElementId { get; set; }
     public string? ElementText { get; set; }

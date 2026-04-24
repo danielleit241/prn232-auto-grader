@@ -112,7 +112,7 @@ public class ExportRunner(
                 StudentCode.ParseId(sub.StudentCode),
             };
 
-            int grandTotal = 0, grandMax = 0;
+            decimal grandTotal = 0; int grandMax = 0;
             latestJobBySubmission.TryGetValue(sub.Id, out var latestJobId);
             var subResults = allResults
                 .Where(r => r.SubmissionId == sub.Id
