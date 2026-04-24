@@ -270,6 +270,7 @@ public partial class ArtifactRunner(
             UseShellExecute = false,
         };
         psi.Environment["ASPNETCORE_URLS"] = bindUrl;
+        psi.Environment["ASPNETCORE_ENVIRONMENT"] = "Development"; // ensures Swagger is enabled in student apps
         if (env != null)
             foreach (var (k, v) in env) psi.Environment[k] = v;
 

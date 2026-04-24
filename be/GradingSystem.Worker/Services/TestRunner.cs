@@ -85,7 +85,7 @@ public class TestRunner(ILogger<TestRunner> logger, IOptions<WorkerOptions> work
     private async Task<List<TestCaseResult>> RunApiCasesAsync(
         List<TestCase> testCases, int port, HttpClient client, CancellationToken ct)
     {
-        var swaggerUrl = $"http://localhost:{port}/swagger/v1/swagger.json";
+        var swaggerUrl = $"http://127.0.0.1:{port}/swagger/v1/swagger.json";
         JsonDocument? swaggerDoc = null;
         string? fetchError = null;
 
