@@ -108,7 +108,8 @@ public class TestRunner(ILogger<TestRunner> logger, IOptions<WorkerOptions> work
         logger.LogInformation("Swagger fetch {Url}: {Result}", swaggerUrl,
             swaggerDoc != null ? "OK" : fetchError);
 
-        // Separate test cases: those with ExpectedBody use newman, others use existing logic
+        // Prefer direct HTTP runner for all HTTP cases (including expected body checks).
+        // Keep swagger-only checks separate.
         var newmanCases = new List<TestCase>();
         var directCases = new List<TestCase>();
 
@@ -119,9 +120,7 @@ public class TestRunner(ILogger<TestRunner> logger, IOptions<WorkerOptions> work
                            && expect.Body.Value.ValueKind != JsonValueKind.Null;
             bool isHttpCase = expect.Status != null || tc.InputJson != null || hasBody;
 
-            if (hasBody)
-                newmanCases.Add(tc);
-            else if (isHttpCase)
+            if (isHttpCase)
                 directCases.Add(tc);
             else
                 directCases.Add(tc); // swagger-only
@@ -209,21 +208,24 @@ public class TestRunner(ILogger<TestRunner> logger, IOptions<WorkerOptions> work
             var expect = DeserializeExpect(tc.ExpectJson);
             var url = $"http://{bindHost}:{port}{tc.UrlTemplate}";
 
+            var httpMethod = tc.HttpMethod.ToUpperInvariant();
+            var isGetOrDelete = httpMethod == "GET" || httpMethod == "DELETE";
             var requestObj = new JsonObject
             {
-                ["method"] = tc.HttpMethod.ToUpperInvariant(),
-                ["header"] = new JsonArray
-                {
-                    new JsonObject { ["key"] = "Content-Type", ["value"] = "application/json" },
-                    new JsonObject { ["key"] = "Accept",       ["value"] = "application/json" }
-                },
+                ["method"] = httpMethod,
+                ["header"] = isGetOrDelete
+                    ? new JsonArray { new JsonObject { ["key"] = "Accept", ["value"] = "application/json" } }
+                    : new JsonArray
+                    {
+                        new JsonObject { ["key"] = "Content-Type", ["value"] = "application/json" },
+                        new JsonObject { ["key"] = "Accept",       ["value"] = "application/json" }
+                    },
                 ["url"] = new JsonObject { ["raw"] = url }
             };
 
             if (tc.InputJson != null)
             {
-                var method = tc.HttpMethod.ToUpperInvariant();
-                if (method == "GET" || method == "DELETE")
+                if (isGetOrDelete)
                 {
                     var qs = JsonToQueryString(tc.InputJson);
                     ((JsonObject)requestObj["url"]!)["raw"] = url + "?" + qs;
@@ -239,8 +241,7 @@ public class TestRunner(ILogger<TestRunner> logger, IOptions<WorkerOptions> work
             }
             else
             {
-                var method = tc.HttpMethod.ToUpperInvariant();
-                if (method == "POST" || method == "PUT" || method == "PATCH")
+                if (httpMethod == "POST" || httpMethod == "PUT" || httpMethod == "PATCH")
                 {
                     requestObj["body"] = new JsonObject
                     {
@@ -252,16 +253,19 @@ public class TestRunner(ILogger<TestRunner> logger, IOptions<WorkerOptions> work
 
             var tests = new StringBuilder();
             if (expect.Status.HasValue)
-                tests.AppendLine($"pm.test('status {expect.Status}', () => pm.response.to.have.status({expect.Status}));");
+                tests.AppendLine($"pm.test('status {expect.Status}', function() {{ var code = pm.response ? pm.response.code : undefined; pm.expect(code).to.eql({expect.Status}); }});");
 
             if (expect.Body.HasValue && expect.Body.Value.ValueKind != JsonValueKind.Undefined
                 && expect.Body.Value.ValueKind != JsonValueKind.Null)
             {
                 var expectedBodyJson = expect.Body.Value.GetRawText();
                 tests.AppendLine($"pm.test('body match', function() {{");
-                tests.AppendLine($"  var res = pm.response.json();");
+                tests.AppendLine($"  if (!pm.response) {{ pm.expect.fail('No response received'); return; }}");
+                tests.AppendLine($"  var text; try {{ text = pm.response.text(); }} catch(e) {{ text = null; }}");
+                tests.AppendLine($"  if (text == null) {{ pm.expect.fail('Empty or no response body'); return; }}");
+                tests.AppendLine($"  var res; try {{ res = JSON.parse(text); }} catch(e) {{ pm.expect.fail('Not JSON: ' + String(text).substring(0, 100)); return; }}");
                 tests.AppendLine($"  var expected = {expectedBodyJson};");
-                tests.AppendLine($"  pm.expect(JSON.stringify(res)).to.equal(JSON.stringify(expected));");
+                tests.AppendLine($"  pm.expect(res).to.deep.equal(expected);");
                 tests.AppendLine($"}});");
             }
 
@@ -337,6 +341,16 @@ public class TestRunner(ILogger<TestRunner> logger, IOptions<WorkerOptions> work
                 int actualStatus = 0;
                 string? actualBody = null;
                 string? failReason = null;
+
+                // Newman 6.x runs test scripts even on request failure; detect it early
+                if (exec.TryGetProperty("requestError", out var reqErr) && reqErr.ValueKind != JsonValueKind.Null)
+                {
+                    var errMsg = reqErr.ValueKind == JsonValueKind.Object
+                        ? FormatRequestError(reqErr)
+                        : reqErr.ToString();
+                    results.Add(FailResult(tc, url, $"Request error: {errMsg}"));
+                    continue;
+                }
 
                 if (exec.TryGetProperty("response", out var resp))
                 {
@@ -531,6 +545,26 @@ public class TestRunner(ILogger<TestRunner> logger, IOptions<WorkerOptions> work
     {
         if (expect.Status != null && actualStatus != expect.Status)
             return $"Expected status {expect.Status}, got {actualStatus}";
+
+        if (expect.Body.HasValue
+            && expect.Body.Value.ValueKind != JsonValueKind.Undefined
+            && expect.Body.Value.ValueKind != JsonValueKind.Null)
+        {
+            if (!isJson)
+                return "Expected JSON body but response Content-Type is not application/json";
+
+            JsonNode? actual;
+            JsonNode? expected;
+            try
+            {
+                actual = JsonNode.Parse(body);
+                expected = JsonNode.Parse(expect.Body.Value.GetRawText());
+            }
+            catch { return "Response is not valid JSON"; }
+
+            if (!JsonNode.DeepEquals(actual, expected))
+                return "Response body does not match expected body";
+        }
 
         if (isJson)
         {
@@ -846,6 +880,25 @@ public class TestRunner(ILogger<TestRunner> logger, IOptions<WorkerOptions> work
         if (node == null) return string.Empty;
         return string.Join("&", node.Select(kv =>
             Uri.EscapeDataString(kv.Key) + "=" + Uri.EscapeDataString(kv.Value?.ToString() ?? "")));
+    }
+
+    private static string FormatRequestError(JsonElement requestError)
+    {
+        var parts = new List<string>();
+        if (requestError.TryGetProperty("message", out var message) && message.ValueKind == JsonValueKind.String)
+            parts.Add(message.GetString()!);
+        if (requestError.TryGetProperty("code", out var code) && code.ValueKind == JsonValueKind.String)
+            parts.Add($"code={code.GetString()}");
+        if (requestError.TryGetProperty("name", out var name) && name.ValueKind == JsonValueKind.String)
+            parts.Add($"name={name.GetString()}");
+
+        if (parts.Count > 0)
+            return string.Join(", ", parts);
+
+        var raw = requestError.GetRawText();
+        return string.IsNullOrWhiteSpace(raw) || raw == "{}"
+            ? "Unknown request error"
+            : raw;
     }
 
     private readonly struct NewmanLaunch(string executablePath, bool useNpx)
