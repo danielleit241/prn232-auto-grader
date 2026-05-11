@@ -64,8 +64,8 @@ jobs:
           file: ./fe/grading-system/Dockerfile
           push: true
           build-args: |
-            NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL != '' && vars.NEXT_PUBLIC_API_URL || 'https://prn232.verendar.vn/api/v1' }}
-            NEXT_PUBLIC_APP_URL=${{ vars.NEXT_PUBLIC_APP_URL != '' && vars.NEXT_PUBLIC_APP_URL || 'https://prn232.verendar.vn' }}
+            NEXT_PUBLIC_API_URL=http://localhost:5049/api/v1
+            NEXT_PUBLIC_APP_URL=http://localhost:3000
           tags: |
             ${{ secrets.DOCKER_USERNAME }}/grading-system-fe:latest
             ${{ secrets.DOCKER_USERNAME }}/grading-system-fe:${{ github.sha }}
@@ -84,9 +84,3 @@ jobs:
             ${{ secrets.DOCKER_USERNAME }}/grading-system-worker:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-      - name: Trigger Dokploy Deployment
-        env:
-          DOKPLOY_WEBHOOK_URL: ${{ secrets.DOKPLOY_WEBHOOK_URL }}
-        if: env.DOKPLOY_WEBHOOK_URL != '' && (steps.changes.outputs.api == 'true' || steps.changes.outputs.worker == 'true' || steps.changes.outputs.fe == 'true')
-        run: curl -X GET "$DOKPLOY_WEBHOOK_URL"

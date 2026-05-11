@@ -1,22 +1,12 @@
-# PROD stack: includes api + worker and pulls prebuilt images from registry.
-# Uses the same .env file in this folder for ${VAR} substitution.
-# Example: docker compose -f docker-compose.prod.yml up -d
-
 services:
-
   fe:
     image: ${DOCKER_REPO}/grading-system-fe:${IMAGE_TAG}
-    build:
-      context: ./fe/grading-system
-      dockerfile: Dockerfile
-      args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
-        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL}
+
     depends_on:
       api:
         condition: service_started
     ports:
-      - "${FE_PORT:-3000}:3000"
+      - '${FE_PORT:-3000}:3000'
     networks:
       - grading_net
     restart: unless-stopped
@@ -31,14 +21,14 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: ${ASPNETCORE_URLS}
-      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      ConnectionStrings__Postgres: 'Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}'
       Storage__BasePath: /storage
       RabbitMQ__Host: rabbitmq://rabbitmq
       RabbitMQ__Username: ${RABBITMQ_USER}
       RabbitMQ__Password: ${RABBITMQ_PASSWORD}
       Cors__AllowedOrigins__0: ${CORS_ORIGIN_0}
     ports:
-      - "${API_PORT}:8080"
+      - '${API_PORT}:8080'
     volumes:
       - storage_data:/storage
     networks:
@@ -56,8 +46,8 @@ services:
         condition: service_healthy
     environment:
       ASPNETCORE_ENVIRONMENT: Production
-      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
-      ConnectionStrings__SqlServer: "Server=sqlserver,1433;User Id=sa;Password=${SA_PASSWORD};TrustServerCertificate=true"
+      ConnectionStrings__Postgres: 'Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}'
+      ConnectionStrings__SqlServer: 'Server=sqlserver,1433;User Id=sa;Password=${SA_PASSWORD};TrustServerCertificate=true'
       Storage__BasePath: /storage
       RabbitMQ__Host: rabbitmq://rabbitmq
       RabbitMQ__Username: ${RABBITMQ_USER}
@@ -80,13 +70,13 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
-      - "${POSTGRES_PUBLISH_PORT}:5432"
+      - '${POSTGRES_PUBLISH_PORT}:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - grading_net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -95,17 +85,21 @@ services:
   sqlserver:
     image: mcr.microsoft.com/mssql/server:2022-latest
     environment:
-      ACCEPT_EULA: "Y"
+      ACCEPT_EULA: 'Y'
       SA_PASSWORD: ${SA_PASSWORD}
       MSSQL_PID: Express
     ports:
-      - "${SQLSERVER_PUBLISH_PORT}:1433"
+      - '${SQLSERVER_PUBLISH_PORT}:1433'
     volumes:
       - sqlserver_data:/var/opt/mssql
     networks:
       - grading_net
     healthcheck:
-      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P '${SA_PASSWORD}' -Q 'SELECT 1' -C -b"]
+      test:
+        [
+          'CMD-SHELL',
+          "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P '${SA_PASSWORD}' -Q 'SELECT 1' -C -b",
+        ]
       interval: 15s
       timeout: 10s
       retries: 10
@@ -118,14 +112,14 @@ services:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
     ports:
-      - "${RABBITMQ_AMQP_PORT}:5672"
-      - "${RABBITMQ_UI_PORT}:15672"
+      - '${RABBITMQ_AMQP_PORT}:5672'
+      - '${RABBITMQ_UI_PORT}:15672'
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     networks:
       - grading_net
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      test: ['CMD', 'rabbitmq-diagnostics', 'ping']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -139,9 +133,9 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable"
+      DATABASE_URL: 'postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable'
     ports:
-      - "${PGWEB_PORT}:8081"
+      - '${PGWEB_PORT}:8081'
     networks:
       - grading_net
     restart: unless-stopped
