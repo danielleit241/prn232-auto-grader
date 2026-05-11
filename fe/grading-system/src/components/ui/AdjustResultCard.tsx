@@ -136,6 +136,7 @@ export function AdjustResultCard({ result }: { result: QuestionResult }) {
             type="number"
             min={0}
             max={result.maxScore}
+            step={0.5}
             value={adjustedScore}
             onChange={(e) => setAdjustedScore(Number(e.target.value))}
             style={{

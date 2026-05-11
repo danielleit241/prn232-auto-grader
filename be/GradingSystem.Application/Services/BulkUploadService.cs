@@ -15,7 +15,7 @@ public class BulkUploadService(
     IConfiguration config,
     ILogger<BulkUploadService> logger) : IBulkUploadService
 {
-    private readonly string _basePath = config["Storage:BasePath"] ?? "/storage";
+    private readonly string _basePath = string.IsNullOrEmpty(config["Storage:BasePath"]) ? "/storage" : config["Storage:BasePath"]!;
 
     public async Task<BulkUploadResultDto> ParseAndCreateAsync(
         Guid assignmentId,

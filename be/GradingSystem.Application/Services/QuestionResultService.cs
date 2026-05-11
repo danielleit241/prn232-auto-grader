@@ -58,7 +58,7 @@ public class QuestionResultService(IUnitOfWork unitOfWork) : IQuestionResultServ
         var result = await unitOfWork.QuestionResults.GetByIdAsync(id)
             ?? throw new NotFoundException($"QuestionResult '{id}' not found.");
 
-        if (req.AdjustedScore < 0 || req.AdjustedScore > result.MaxScore)
+        if (req.AdjustedScore < 0m || req.AdjustedScore > result.MaxScore)
         {
             throw new BadRequestException($"AdjustedScore must be in range [0..{result.MaxScore}].");
         }

@@ -12,6 +12,6 @@ public class SubmissionDto
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public SubmissionStatus Status { get; set; }
     public DateTime CreatedAt { get; set; }
-    public int? TotalScore { get; set; }
+    public decimal? TotalScore { get; set; }
     public int? MaxScore { get; set; }
 }

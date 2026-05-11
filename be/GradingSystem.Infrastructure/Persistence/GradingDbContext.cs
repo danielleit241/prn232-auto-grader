@@ -58,6 +58,7 @@ public class GradingDbContext(DbContextOptions<GradingDbContext> options) : DbCo
             e.Property(x => x.Name).HasMaxLength(100).IsRequired();
             e.Property(x => x.HttpMethod).HasMaxLength(10).IsRequired();
             e.Property(x => x.UrlTemplate).HasMaxLength(500).IsRequired();
+            e.Property(x => x.Score).HasPrecision(10, 2);
         });
 
         // Submission
@@ -82,6 +83,8 @@ public class GradingDbContext(DbContextOptions<GradingDbContext> options) : DbCo
         {
             e.HasIndex(x => new { x.GradingJobId, x.QuestionId }).IsUnique()
                 .HasFilter("\"GradingJobId\" IS NOT NULL");
+            e.Property(x => x.Score).HasPrecision(10, 2);
+            e.Property(x => x.AdjustedScore).HasPrecision(10, 2);
         });
 
         // ExportJob — AssignmentId and ExamSessionId are mutually exclusive (one is set)

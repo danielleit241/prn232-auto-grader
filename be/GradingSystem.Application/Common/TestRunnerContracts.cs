@@ -22,7 +22,7 @@ public class TestCaseResult
 {
     public Guid TestCaseId { get; set; }
     public bool Pass { get; set; }
-    public int AwardedScore { get; set; }
+    public decimal AwardedScore { get; set; }
     public string HttpMethod { get; set; } = string.Empty;
     public string Url { get; set; } = string.Empty;
     public int ActualStatus { get; set; }

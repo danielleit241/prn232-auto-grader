@@ -22,7 +22,7 @@ public partial class ArtifactRunner(
     {
         var submission = job.Submission;
         var assignment = submission.Assignment;
-        var basePath = config["Storage:BasePath"]!;
+        var basePath = string.IsNullOrEmpty(config["Storage:BasePath"]) ? "/storage" : config["Storage:BasePath"]!;
 
         var sandboxPath = Path.Combine(basePath, "sandbox", job.Id.ToString());
         Directory.CreateDirectory(sandboxPath);
